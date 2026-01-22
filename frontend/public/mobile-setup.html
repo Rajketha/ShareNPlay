@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ShareNPlay - Mobile Setup</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 20px;
+            padding: 30px;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+            backdrop-filter: blur(10px);
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .header h1 {
+            color: #333;
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            color: #666;
+            font-size: 1.1em;
+        }
+
+        .step {
+            background: #f8f9fa;
+            border-radius: 15px;
+            padding: 25px;
+            margin-bottom: 20px;
+            border-left: 5px solid #667eea;
+        }
+
+        .step h3 {
+            color: #333;
+            margin-bottom: 15px;
+            font-size: 1.3em;
+        }
+
+        .step p {
+            color: #555;
+            line-height: 1.6;
+            margin-bottom: 10px;
+        }
+
+        .code-block {
+            background: #2d3748;
+            color: #e2e8f0;
+            padding: 15px;
+            border-radius: 10px;
+            font-family: 'Courier New', monospace;
+            margin: 10px 0;
+            overflow-x: auto;
+        }
+
+        .download-btn {
+            display: inline-block;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 15px 30px;
+            border-radius: 25px;
+            text-decoration: none;
+            font-weight: bold;
+            margin: 10px 5px;
+            transition: transform 0.2s;
+        }
+
+        .download-btn:hover {
+            transform: translateY(-2px);
+        }
+
+        .warning {
+            background: #fff3cd;
+            border: 1px solid #ffeaa7;
+            border-radius: 10px;
+            padding: 15px;
+            margin: 20px 0;
+        }
+
+        .warning h4 {
+            color: #856404;
+            margin-bottom: 10px;
+        }
+
+        .warning p {
+            color: #856404;
+        }
+
+        .mobile-tip {
+            background: #d1ecf1;
+            border: 1px solid #bee5eb;
+            border-radius: 10px;
+            padding: 15px;
+            margin: 20px 0;
+        }
+
+        .mobile-tip h4 {
+            color: #0c5460;
+            margin-bottom: 10px;
+        }
+
+        .mobile-tip p {
+            color: #0c5460;
+        }
+
+        .qr-section {
+            text-align: center;
+            margin: 30px 0;
+        }
+
+        .qr-placeholder {
+            width: 200px;
+            height: 200px;
+            background: #f8f9fa;
+            border: 2px dashed #dee2e6;
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 20px;
+            color: #6c757d;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🎮 ShareNPlay</h1>
+            <p>Mobile Setup Instructions</p>
+        </div>
+
+        <div class="mobile-tip">
+            <h4>📱 Mobile Users</h4>
+            <p>If you're on mobile, you can play ShareNPlay directly in your browser! Just scan the QR code from the main app or visit the game URL.</p>
+        </div>
+
+        <div class="step">
+            <h3>🚀 Quick Setup (Windows)</h3>
+            <p>Download and run ShareNPlay in one click:</p>
+            <a href="https://github.com/Rajketha/ShareNPlay/archive/refs/heads/main.zip" class="download-btn">
+                📥 Download ZIP
+            </a>
+            <a href="RUN-FROM-GITHUB.bat" class="download-btn">
+                ⚡ One-Click Runner
+            </a>
+        </div>
+
+        <div class="step">
+            <h3>📋 Manual Setup</h3>
+            <p>If the one-click setup doesn't work, follow these steps:</p>
+            
+            <h4>1. Download the App</h4>
+            <p>Click the download button above or visit:</p>
+            <div class="code-block">https://github.com/Rajketha/ShareNPlay</div>
+            
+            <h4>2. Extract and Run</h4>
+            <div class="code-block">
+                # Extract the ZIP file<br>
+                # Double-click RUN-FROM-GITHUB.bat<br>
+                # Wait for automatic setup (2-3 minutes)<br>
+                # App will open automatically
+            </div>
+        </div>
+
+        <div class="step">
+            <h3>🔧 Requirements</h3>
+            <ul style="color: #555; line-height: 1.6; margin-left: 20px;">
+                <li>Windows 10/11</li>
+                <li>Node.js (will be installed automatically)</li>
+                <li>Internet connection for first setup</li>
+                <li>Git (optional, for advanced users)</li>
+            </ul>
+        </div>
+
+        <div class="warning">
+            <h4>⚠️ Important Notes</h4>
+            <p>• The app needs to run on a computer (desktop/laptop)</p>
+            <p>• Mobile devices can connect to the computer via WiFi</p>
+            <p>• Both devices must be on the same network</p>
+        </div>
+
+        <div class="step">
+            <h3>📱 Mobile Access</h3>
+            <p>Once the app is running on your computer:</p>
+            <ol style="color: #555; line-height: 1.6; margin-left: 20px;">
+                <li>Find your computer's IP address</li>
+                <li>On mobile, visit: <code>http://YOUR_IP:3002</code></li>
+                <li>Scan QR codes for instant access</li>
+                <li>Play games and share files!</li>
+            </ol>
+        </div>
+
+        <div class="qr-section">
+            <h3>🔗 Get Started</h3>
+            <div class="qr-placeholder">
+                📱 Scan QR from main app
+            </div>
+            <p>Scan the QR code from the main ShareNPlay app to access the game directly on your mobile device!</p>
+        </div>
+
+        <div style="text-align: center; margin-top: 30px;">
+            <a href="http://localhost:3002" class="download-btn">
+                🎮 Open ShareNPlay
+            </a>
+        </div>
+    </div>
+</body>
+</html> 

@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ShareNPlay - Mobile App</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 500px;
+            margin: 0 auto;
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 20px;
+            padding: 30px;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+            backdrop-filter: blur(10px);
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .header h1 {
+            color: #333;
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            color: #666;
+            font-size: 1.1em;
+        }
+
+        .app-icon {
+            width: 80px;
+            height: 80px;
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            border-radius: 20px;
+            margin: 0 auto 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 2em;
+            color: white;
+        }
+
+        .install-section {
+            background: #f8f9fa;
+            border-radius: 15px;
+            padding: 25px;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+
+        .install-btn {
+            display: inline-block;
+            background: linear-gradient(135deg, #28a745, #20c997);
+            color: white;
+            padding: 15px 30px;
+            border-radius: 25px;
+            text-decoration: none;
+            font-weight: bold;
+            margin: 10px 5px;
+            transition: transform 0.2s;
+            border: none;
+            cursor: pointer;
+            font-size: 1.1em;
+        }
+
+        .install-btn:hover {
+            transform: translateY(-2px);
+        }
+
+        .feature-list {
+            list-style: none;
+            margin: 20px 0;
+        }
+
+        .feature-list li {
+            padding: 10px 0;
+            border-bottom: 1px solid #eee;
+            display: flex;
+            align-items: center;
+        }
+
+        .feature-list li:last-child {
+            border-bottom: none;
+        }
+
+        .feature-list .icon {
+            font-size: 1.5em;
+            margin-right: 15px;
+            width: 30px;
+            text-align: center;
+        }
+
+        .game-preview {
+            background: #e3f2fd;
+            border-radius: 15px;
+            padding: 20px;
+            margin: 20px 0;
+            text-align: center;
+        }
+
+        .game-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 10px;
+            margin: 15px 0;
+        }
+
+        .game-item {
+            background: white;
+            border-radius: 10px;
+            padding: 15px;
+            text-align: center;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+
+        .game-item .icon {
+            font-size: 2em;
+            margin-bottom: 5px;
+        }
+
+        .game-item .name {
+            font-size: 0.8em;
+            color: #666;
+        }
+
+        .download-section {
+            background: #fff3cd;
+            border: 1px solid #ffeaa7;
+            border-radius: 15px;
+            padding: 20px;
+            margin: 20px 0;
+            text-align: center;
+        }
+
+        .download-btn {
+            display: inline-block;
+            background: linear-gradient(135deg, #007bff, #0056b3);
+            color: white;
+            padding: 12px 25px;
+            border-radius: 20px;
+            text-decoration: none;
+            font-weight: bold;
+            margin: 5px;
+            transition: transform 0.2s;
+        }
+
+        .download-btn:hover {
+            transform: translateY(-2px);
+        }
+
+        .warning {
+            background: #f8d7da;
+            border: 1px solid #f5c6cb;
+            border-radius: 10px;
+            padding: 15px;
+            margin: 20px 0;
+            color: #721c24;
+        }
+
+        .success {
+            background: #d4edda;
+            border: 1px solid #c3e6cb;
+            border-radius: 10px;
+            padding: 15px;
+            margin: 20px 0;
+            color: #155724;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="app-icon">🎮</div>
+            <h1>ShareNPlay</h1>
+            <p>Multiplayer Games & File Sharing</p>
+        </div>
+
+        <div class="install-section">
+            <h3>📱 Install as Mobile App</h3>
+            <p>Get the full app experience on your mobile device!</p>
+            <button class="install-btn" onclick="installPWA()">
+                📱 Install App
+            </button>
+            <button class="install-btn" onclick="openInBrowser()">
+                🌐 Open in Browser
+            </button>
+        </div>
+
+        <div class="game-preview">
+            <h3>🎮 Available Games</h3>
+            <p>Play these exciting mini-games while sharing files:</p>
+            <div class="game-grid">
+                <div class="game-item">
+                    <div class="icon">🪨</div>
+                    <div class="name">Rock Paper Scissors</div>
+                </div>
+                <div class="game-item">
+                    <div class="icon">👆</div>
+                    <div class="name">Tap War</div>
+                </div>
+                <div class="game-item">
+                    <div class="icon">🧠</div>
+                    <div class="name">Quick Quiz</div>
+                </div>
+                <div class="game-item">
+                    <div class="icon">😊</div>
+                    <div class="name">Emoji Memory</div>
+                </div>
+                <div class="game-item">
+                    <div class="icon">⌨️</div>
+                    <div class="name">Typing Speed</div>
+                </div>
+                <div class="game-item">
+                    <div class="icon">⚡</div>
+                    <div class="name">Reaction Time</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="download-section">
+            <h3>💻 Desktop Version</h3>
+            <p>For full features, download the desktop version:</p>
+            <a href="https://github.com/Rajketha/ShareNPlay/archive/refs/heads/main.zip" class="download-btn">
+                📥 Download ZIP
+            </a>
+            <a href="RUN-FROM-GITHUB.bat" class="download-btn">
+                ⚡ One-Click Setup
+            </a>
+        </div>
+
+        <div class="warning">
+            <h4>⚠️ Important Note</h4>
+            <p>Mobile browsers cannot download and run desktop applications. The mobile app provides the best possible experience with all games and features available in your browser.</p>
+        </div>
+
+        <div class="success">
+            <h4>✅ What You Get</h4>
+            <ul class="feature-list">
+                <li><span class="icon">🎮</span> All 6 mini-games</li>
+                <li><span class="icon">📁</span> File sharing with QR codes</li>
+                <li><span class="icon">🤝</span> Real-time multiplayer</li>
+                <li><span class="icon">📱</span> Touch-friendly controls</li>
+                <li><span class="icon">🔒</span> Secure file transfer</li>
+                <li><span class="icon">🎯</span> Truth or dare system</li>
+            </ul>
+        </div>
+    </div>
+
+    <script>
+        // PWA Installation
+        function installPWA() {
+            if ('serviceWorker' in navigator) {
+                navigator.serviceWorker.register('/service-worker.js')
+                    .then(registration => {
+                        console.log('PWA registered successfully');
+                        showInstallPrompt();
+                    })
+                    .catch(error => {
+                        console.error('PWA registration failed:', error);
+                        openInBrowser();
+                    });
+            } else {
+                openInBrowser();
+            }
+        }
+
+        function showInstallPrompt() {
+            // Show browser install prompt
+            if (window.deferredPrompt) {
+                window.deferredPrompt.prompt();
+                window.deferredPrompt.userChoice.then(choiceResult => {
+                    if (choiceResult.outcome === 'accepted') {
+                        console.log('PWA installed successfully');
+                    }
+                });
+                window.deferredPrompt = null;
+            } else {
+                alert('Look for "Add to Home Screen" in your browser menu to install the app!');
+            }
+        }
+
+        function openInBrowser() {
+            // Get the game code from URL parameters
+            const urlParams = new URLSearchParams(window.location.search);
+            const code = urlParams.get('code');
+            const view = urlParams.get('view');
+            
+            // Construct the game URL
+            const gameUrl = `http://192.168.1.38:3002${view ? `?code=${code}&view=${view}` : ''}`;
+            
+            // Open in new tab
+            window.open(gameUrl, '_blank');
+        }
+
+        // Listen for PWA install prompt
+        window.addEventListener('beforeinstallprompt', (e) => {
+            e.preventDefault();
+            window.deferredPrompt = e;
+        });
+
+        // Auto-detect mobile and show appropriate options
+        if (/Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)) {
+            console.log('Mobile device detected');
+        }
+    </script>
+</body>
+</html> 
