@@ -3,7 +3,7 @@
 **ShareNPlay** is a high-capacity, real-time multiplayer mini-games and file-sharing web application built using **React, Node.js, Express, and Socket.IO**.
 
 It is designed for seamless connectivity between **desktop and mobile devices**.  
-Two users can join using a **6-digit code**, play real-time multiplayer games, and securely share files up to **2GB** using direct links or QR codes.
+Two users can join using a **6-digit code**, play real-time multiplayer games, and securely share files up to **2GB** using direct links or QR codes — without crashing the server.
 
 This project prioritizes **performance, stability, and real-world scalability**.
 
@@ -11,12 +11,12 @@ This project prioritizes **performance, stability, and real-world scalability**.
 
 ## ✨ Key Highlights
 
-- Safe **2GB+ file sharing**
-- Disk-based streaming (no RAM overload)
-- Real-time multiplayer games
-- Desktop + mobile support
-- Auto-cleanup for shared files
-- Single-port cloud deployment
+- 🚀 Safe **2GB+ file sharing**
+- 💾 Disk-based streaming (no RAM overload)
+- 🎮 Real-time multiplayer games
+- 📱 Desktop + mobile support
+- 🧹 Auto-cleanup for shared files
+- ☁️ Single-port cloud deployment
 
 ---
 
@@ -52,11 +52,11 @@ Available games:
 - Reaction Time
 
 Game features:
-- Real-time sync powered by Socket.IO
-- Zero-lag gameplay
-- Automatic start when both players join
-- Live score tracking
-- **Winner Dares** system
+- ⚡ Real-time sync powered by Socket.IO
+- 🟢 Zero-lag gameplay
+- 🔄 Automatic start when both players join
+- 📊 Live score tracking
+- 🎯 **Winner Dares** system
 
 ---
 
@@ -64,21 +64,21 @@ Game features:
 
 | Feature | Implementation | Benefit |
 |------|---------------|--------|
-| Storage Engine | multer.diskStorage | Supports 2GB+ files safely |
-| Streaming | Disk-based I/O | Zero RAM crashes |
-| Real-Time Sync | Socket.IO | Instant gameplay updates |
-| Notifications | react-toastify | Clean, non-blocking UI |
-| Compression | compression (GZIP) | Faster local network loading |
-| Static Serving | express.static | Unified port deployment |
+| 💾 Storage Engine | multer.diskStorage | Supports 2GB+ files safely |
+| 🔁 Streaming | Disk-based I/O | Zero RAM crashes |
+| ⚡ Real-Time Sync | Socket.IO | Instant gameplay updates |
+| 🔔 Notifications | react-toastify | Clean, non-blocking UI |
+| 📦 Compression | compression (GZIP) | Faster local network loading |
+| 🌐 Static Serving | express.static | Unified port deployment |
 
 ---
 
 ## 🧰 Core Technologies
 
-- Frontend: React  
-- Backend: Node.js, Express  
-- Real-Time: Socket.IO  
-- File Handling: Multer  
+- ⚛️ Frontend: React  
+- 🟢 Backend: Node.js, Express  
+- 🔄 Real-Time: Socket.IO  
+- 📂 File Handling: Multer  
 
 ---
 
@@ -119,8 +119,8 @@ npm start --prefix backend
 
 ## 🌐 Access
 
-- Desktop: http://localhost:5000  
-- Mobile: Open using your system Wi-Fi IP  
+- 🖥 Desktop: http://localhost:5000  
+- 📱 Mobile: Open using your system Wi-Fi IP  
   Example: `http://192.168.1.38:5000`
 
 Both devices must be on the same network.
@@ -154,13 +154,13 @@ ShareNPlay/
 
 ## ☁️ Deployment Checklist
 
-- Mount a persistent volume to:
+- 📌 Mount a persistent volume to:
   ```
   /backend/uploads
   ```
   Prevents file loss on restarts.
 
-- Application runs on a **single unified port**, ideal for cloud deployment.
+- 🚀 Application runs on a **single unified port**, ideal for cloud deployment.
 
 ---
 
