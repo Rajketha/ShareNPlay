@@ -1,4 +1,6 @@
+const fs = require('fs'); // ADD THIS AT THE TOP
 const express = require('express');
+// ... rest of your importsconst express = require('express');
 const http = require('http');
 const socketIo = require('socket.io');
 const cors = require('cors');
@@ -23,18 +25,34 @@ const io = socketIo(server, {
 });
 
 // Multer configuration for file uploads
-const storage = multer.memoryStorage();
-const upload = multer({ 
-  storage: storage,
-  limits: {
-    fileSize: 10 * 1024 * 1024 // 10MB limit
+// 1. Logic: Automatically create 'uploads' folder if it doesn't exist
+const uploadDir = path.join(__dirname, 'uploads');
+if (!fs.existsSync(uploadDir)) {
+  fs.mkdirSync(uploadDir, { recursive: true });
+}
+
+// 2. Configure Disk Storage
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, 'uploads/'); // Destination folder on your disk
+  },
+  filename: (req, file, cb) => {
+    // Logic: Keep original name but add a timestamp to prevent overwriting
+    cb(null, Date.now() + '-' + file.originalname); 
   }
 });
 
+// 3. Set your new high-capacity limit (e.g., 2GB)
+const upload = multer({ 
+  storage: storage,
+  limits: {
+    fileSize: 2 * 1024 * 1024 * 1024 // 2GB limit in bytes
+  }
+});
 // Middleware
 app.use(cors());
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.use(express.json({ limit: '2gb' })); // Increase from default 100kb
+app.use(express.urlencoded({ limit: '2gb', extended: true }));
 
 // Game state storage
 const games = new Map();
@@ -131,7 +149,22 @@ io.on('connection', (socket) => {
   socket.on('error', (error) => {
     console.error('Socket error:', error);
   });
-  
+  socket.on('downloadStarted', (data) => {
+    // Logic: Show a visual alert to the user
+    console.log(`Download signal received for: ${data.fileName}`);
+    alert(`Activity: Someone is downloading "${data.fileName}"`);
+  });
+  socket.on('downloadStarted', (data) => {
+    // Use your existing notification system (like a toast or alert)
+    alert(`Download Started: ${data.fileName}`); 
+    // Alternatively, you can update a state variable to show a loading spinner
+    setDownloadStatus('Downloading...'); 
+  });
+  socket.on('downloadFinished', (data) => {
+    // Logic: Notify the user the transfer is complete
+    console.log(`Transfer complete for: ${data.fileName}`);
+    alert(`Success: "${data.fileName}" has been fully downloaded!`);
+  });
   socket.on('disconnect', (reason) => {
     console.log('User disconnected:', socket.id, 'Reason:', reason);
     // Clean up player data
@@ -646,23 +679,18 @@ app.post('/upload', upload.single('file'), (req, res) => {
     }
     
     const code = Math.random().toString(36).substring(2, 8).toUpperCase();
-    const fileName = req.file.originalname;
-    const mimetype = req.file.mimetype;
-    const data = req.file.buffer;
     
+    // Logic: Save 'path' to the hard drive instead of the buffer
     files.set(code, {
-      fileName,
-      mimetype,
-      data,
+      fileName: req.file.originalname,
+      mimetype: req.file.mimetype,
+      path: req.file.path, // <--- Correct: Uses Disk Path
       uploadedAt: new Date()
     });
     
     fileCodes.set(code, true);
-    
-    console.log(`File uploaded: ${fileName} with code: ${code}`);
-    res.json({ code, fileName, mimetype });
+    res.json({ code, fileName: req.file.originalname });
   } catch (error) {
-    console.error('Upload error:', error);
     res.status(500).json({ error: 'Upload failed' });
   }
 });
@@ -686,13 +714,25 @@ app.get('/download/:code', (req, res) => {
   const { code } = req.params;
   const file = files.get(code);
   
-  if (!file) {
+  if (!file || !file.path) {
     return res.status(404).json({ error: 'File not found' });
   }
-  
-  res.setHeader('Content-Type', file.mimetype);
-  res.setHeader('Content-Disposition', `attachment; filename="${file.fileName}"`);
-  res.send(file.data);
+
+  // Signal 1: Download Started
+  io.to(code).emit('downloadStarted', { fileName: file.fileName });
+
+  // Stream the file with a completion callback
+  res.download(file.path, file.fileName, (err) => {
+    if (err) {
+      console.error("Download error:", err);
+    } else {
+      // Signal 2: Download Finished
+      io.to(code).emit('downloadFinished', { 
+        fileName: file.fileName,
+        status: 'success' 
+      });
+    }
+  });
 });
 
 app.get('/dare-categories', (req, res) => {

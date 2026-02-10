@@ -4,6 +4,8 @@ import io from 'socket.io-client';
 import axios from 'axios';
 import { QRCodeSVG } from 'qrcode.react';
 import './index.css';
+import { ToastContainer, toast } from 'react-toastify';
+import 'react-toastify/dist/ReactToastify.css';
 import confetti from 'canvas-confetti';
 
 const BACKEND_URL = `${window.location.protocol}//${window.location.hostname}:5000`;
@@ -203,6 +205,27 @@ const FRONTEND_PORT = window.location.port || "3002";
       console.error('🔄 Reconnection failed after all attempts');
       setConnectionStatus('error');
       setError('Failed to reconnect to server');
+    });
+    s.on('downloadStarted', (data) => {
+      console.log('📡 Download signal received:', data.fileName);
+      // Modern Toast notification for starting
+      toast.info(`🚀 Starting download: ${data.fileName}`, {
+        position: "top-right",
+        autoClose: 3000,
+        theme: "colored",
+      });
+      setIsDownloading(true);
+    });
+
+    s.on('downloadFinished', (data) => {
+      console.log('✅ Download finished signal received');
+      // Modern Toast notification for finishing
+      toast.success(`🎉 Download Complete: ${data.fileName}`, {
+        position: "top-right",
+        autoClose: 5000,
+        theme: "glass",
+      });
+      setIsDownloading(false);
     });
     
     s.on('playerJoined', ({ playerType, dare }) => {
@@ -738,7 +761,7 @@ const FRONTEND_PORT = window.location.port || "3002";
                 letterSpacing: '0.2em',
                 fontWeight: 'bold'
               }}
-            />
+            /><ToastContainer />
           </div>
           
           {receiverFileInfo && (
@@ -1167,7 +1190,7 @@ const FRONTEND_PORT = window.location.port || "3002";
           </>
         )}
         <button onClick={() => window.location.reload()}>Restart</button>
-      </div>
+        <ToastContainer /> </div>
     );
   }
   return null;
@@ -1410,7 +1433,7 @@ function ReactionTimeGame({ onResult, round }) {
         fontSize:'2em',
         borderRadius:12,
         fontWeight:'bold'
-      }}>
+      }}><ToastContainer />
         {ready ? 'CLICK!' : 'Wait for green...' }
       </div>
       <div style={{textAlign:'center'}}>
