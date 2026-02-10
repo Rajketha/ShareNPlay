@@ -149,21 +149,12 @@ io.on('connection', (socket) => {
   socket.on('error', (error) => {
     console.error('Socket error:', error);
   });
-  socket.on('downloadStarted', (data) => {
-    // Logic: Show a visual alert to the user
-    console.log(`Download signal received for: ${data.fileName}`);
-    alert(`Activity: Someone is downloading "${data.fileName}"`);
-  });
-  socket.on('downloadStarted', (data) => {
-    // Use your existing notification system (like a toast or alert)
-    alert(`Download Started: ${data.fileName}`); 
-    // Alternatively, you can update a state variable to show a loading spinner
-    setDownloadStatus('Downloading...'); 
-  });
+  
+  
   socket.on('downloadFinished', (data) => {
     // Logic: Notify the user the transfer is complete
     console.log(`Transfer complete for: ${data.fileName}`);
-    alert(`Success: "${data.fileName}" has been fully downloaded!`);
+    
   });
   socket.on('disconnect', (reason) => {
     console.log('User disconnected:', socket.id, 'Reason:', reason);
@@ -719,7 +710,7 @@ app.get('/download/:code', (req, res) => {
   }
 
   // Signal 1: Download Started
-  io.to(code).emit('downloadStarted', { fileName: file.fileName });
+  io.emit('downloadStarted', { fileName: file.fileName });
 
   // Stream the file with a completion callback
   res.download(file.path, file.fileName, (err) => {
@@ -727,10 +718,7 @@ app.get('/download/:code', (req, res) => {
       console.error("Download error:", err);
     } else {
       // Signal 2: Download Finished
-      io.to(code).emit('downloadFinished', { 
-        fileName: file.fileName,
-        status: 'success' 
-      });
+      io.emit('downloadFinished', { fileName: file.fileName, status: 'success' });
     }
   });
 });
@@ -832,10 +820,13 @@ server.listen(PORT, '0.0.0.0', () => {
   addresses.forEach(ip => console.log(`👉 Mobile Access: http://${ip}:${PORT}`));
 
   // Force-open the correct link on your laptop
-  const { exec } = require('child_process');
-  const startCmd = process.platform === 'win32' ? 'start' : 'open';
+  if (process.env.NODE_ENV !== 'production') {
+    const { exec } = require('child_process');
+    const startCmd = process.platform === 'win32' ? 'start' : 'open';
   
-  setTimeout(() => {
-    exec(`${startCmd} ${targetUrl}`);
-  }, 1000);
+    setTimeout(() => {
+      exec(`${startCmd} ${targetUrl}`);
+    }, 1000);
+  }
+  
 });
