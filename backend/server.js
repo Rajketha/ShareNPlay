@@ -4,12 +4,15 @@ const socketIo = require('socket.io');
 const cors = require('cors');
 const multer = require('multer');
 const path = require('path');
+const os = require('os');
+const compression = require('compression'); // ADD THIS LINE
 
 const app = express();
+app.use(compression()); // ADD THIS LINE
 const server = http.createServer(app);
 const io = socketIo(server, {
   cors: {
-    origin: ["http://localhost:3002", "http://192.168.1.38:3002", "http://localhost:3000", "http://192.168.1.38:3000"],
+    origin: true, // This allows any origin to connect, which is safer for a local dev environment across different IPs,
     methods: ["GET", "POST"],
     credentials: true
   },
@@ -719,23 +722,54 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-app.get('/', (req, res) => {
-  res.json({ 
-    message: 'ShareNPlay Backend API',
-    endpoints: [
-      'POST /upload - Upload file',
-      'GET /fileinfo/:code - Get file info',
-      'GET /download/:code - Download file',
-      'GET /dare-categories - Get dare categories',
-      'GET /random-dare/:category - Get random dare',
-      'GET /api/games - Get available games',
-      'GET /api/health - Health check'
-    ]
-  });
+
+
+
+
+
+// --- ADD THIS BLOCK AT THE END OF YOUR ROUTES ---
+
+// 1. Point to your frontend build folder
+const buildPath = path.join(__dirname, '../frontend/build');
+app.use(express.static(buildPath));
+
+// 2. The Catch-All: This handles React routing so games don't crash on refresh
+app.get('*', (req, res) => {
+  res.sendFile(path.join(buildPath, 'index.html'));
 });
 
+// --- YOUR EXISTING SERVER.LISTEN BLOCK FOLLOWS ---
+// --- SERVER START ---
 const PORT = process.env.PORT || 5000;
+
+// --- SERVER START (Final Filtered Version) ---
+
+
 server.listen(PORT, '0.0.0.0', () => {
-  console.log(`ShareNPlay Backend running on port ${PORT}`);
-  console.log(`Access from mobile: http://192.168.1.38:${PORT}`);
-}); 
+  const networkInterfaces = os.networkInterfaces();
+  const addresses = [];
+
+  for (const name in networkInterfaces) {
+    for (const iface of networkInterfaces[name]) {
+      // Logic: Ignore IPv6, Internal IPs, and VirtualBox (192.168.56.x)
+      if (iface.family === 'IPv4' && !iface.internal && !iface.address.startsWith('192.168.56.')) {
+        addresses.push(iface.address);
+      }
+    }
+  }
+
+  // Use the real Wi-Fi IP for the automatic browser launch
+  const targetUrl = `http://${addresses[0] || 'localhost'}:${PORT}`;
+  
+  console.log(`🚀 ShareNPlay Production Server running on port ${PORT}`);
+  console.log(`👉 Access everything at: http://localhost:${PORT}`);
+  addresses.forEach(ip => console.log(`👉 Mobile Access: http://${ip}:${PORT}`));
+
+  // Force-open the correct link on your laptop
+  const { exec } = require('child_process');
+  const startCmd = process.platform === 'win32' ? 'start' : 'open';
+  
+  setTimeout(() => {
+    exec(`${startCmd} ${targetUrl}`);
+  }, 1000);
+});

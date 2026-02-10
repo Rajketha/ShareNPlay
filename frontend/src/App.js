@@ -1,3 +1,4 @@
+console.log('APP.JS LOADED – QR FIX VERSION');
 import React, { useState, useEffect } from 'react';
 import io from 'socket.io-client';
 import axios from 'axios';
@@ -5,7 +6,10 @@ import { QRCodeSVG } from 'qrcode.react';
 import './index.css';
 import confetti from 'canvas-confetti';
 
-const BACKEND_URL = 'http://192.168.1.38:5000';
+const BACKEND_URL = `${window.location.protocol}//${window.location.hostname}:5000`;
+
+
+
 const FEATURES = [
   { icon: '🔒', text: 'Secure 6-digit code file sharing' },
   { icon: '📱', text: 'QR code for easy sharing' },
@@ -40,13 +44,21 @@ console.error = function (...args) {
   originalConsoleError.apply(console, args);
 };
 
-const LAN_IP = "192.168.1.38"; // <-- Replace with your actual LAN IP
-const FRONTEND_PORT = "3002";  // <-- Replace with your frontend port if different
+const FRONTEND_PORT = window.location.port || "3002";
+ // <-- Replace with your frontend port if different
 
 function App() {
   const [view, setView] = useState('home');
   const [file, setFile] = useState(null);
   const [code, setCode] = useState('');
+  // This replaces the hardcoded 192.168.1.38 logic
+const host = window.location.hostname;
+const port = window.location.port || "3002";
+
+const qrUrl =
+  `${window.location.protocol}//${host}:${port}` +
+  `${window.location.pathname}?code=${code}&view=receiver`;
+
   const [dare, setDare] = useState('');
   const [fileInfo, setFileInfo] = useState(null);
   const [socket, setSocket] = useState(null);
@@ -144,6 +156,10 @@ function App() {
       reconnectionDelayMax: 5000,
       maxReconnectionAttempts: 10
     });
+    // ---------- QR URL (GLOBAL) ----------
+const FRONTEND_PORT = window.location.port || "3002";
+
+
     setSocket(s);
     
     // Connection events with enhanced debugging
@@ -275,6 +291,9 @@ function App() {
       confetti({ particleCount: 120, spread: 90, origin: { y: 0.6 } });
     }
   }, [view, gameWinner, playerType]);
+  // ===== QR URL (GLOBAL – DO NOT MOVE) =====
+
+
 
   const handleUpload = async () => {
     setIsUploading(true);
@@ -344,10 +363,8 @@ function App() {
   };
 
   // Helper to get local IP for QR code
-  const getLocalIp = () => {
-    // Replace this with your actual local IP or fetch dynamically if needed
-    return '192.168.1.38'; // <-- change this to your computer's IP if needed
-  };
+  const getLocalIp = () => window.location.hostname;
+
 
   // Enhanced QR code generation with mobile instructions
   const generateQRCode = () => {
@@ -362,7 +379,7 @@ function App() {
       <div className="qr-section">
         <h3>📱 Mobile App QR Code</h3>
         <div className="qr-container">
-          <QRCodeSVG value={mobileAppUrl} size={200} />
+          
         </div>
         <div className="mobile-instructions">
           <p><strong>📱 Scan to install mobile app!</strong></p>
@@ -487,18 +504,28 @@ function App() {
               <div className="code-display" style={{fontSize:'2em',fontWeight:'bold',color:'#007bff',marginBottom:'0.5em'}}>{code}</div>
               <p style={{color:'#6c757d',marginBottom:'1em'}}>Share this code with the receiver</p>
               <div className="qr-container">
-                <QRCodeSVG 
-                  value={`http://${LAN_IP}:${FRONTEND_PORT}${window.location.pathname}?code=${code}&view=receiver`} 
-                  size={120} 
-                  style={{margin:'0 auto'}} 
-                />
+              
+
+
+
+
+  <QRCodeSVG
+    value={qrUrl}
+    size={120}
+    style={{ margin: '0 auto' }}
+  />
+
+
+
+                
               </div>
               <p style={{color:'#28a745',fontSize:'0.9em',marginTop:'0.5em',fontStyle:'italic'}}>
                 📱 Scan this QR code to open receiver page directly!
               </p>
               <button 
                 onClick={() => {
-                  const directLink = `http://${LAN_IP}:${FRONTEND_PORT}${window.location.pathname}?code=${code}&view=receiver`;
+                  const directLink = `${window.location.protocol}//${window.location.hostname}:${FRONTEND_PORT}${window.location.pathname}?code=${code}&view=receiver`;
+
                   navigator.clipboard.writeText(directLink);
                   alert('Direct link copied to clipboard!');
                 }}
