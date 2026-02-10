@@ -1,14 +1,49 @@
-# ShareNPlay 🎮
+# 🎮 ShareNPlay — Performance Edition
 
-ShareNPlay is a **real-time multiplayer mini-games and file-sharing web application** built using **React, Node.js, Express, and Socket.IO**.
+**ShareNPlay** is a high-capacity, real-time multiplayer mini-games and file-sharing web application built using **React, Node.js, Express, and Socket.IO**.
 
-Two users can join using a code, play multiplayer games, and securely share files using links or QR codes.
+It is designed for seamless connectivity between **desktop and mobile devices**.  
+Two users can join using a **6-digit code**, play real-time multiplayer games, and securely share files up to **2GB** using direct links or QR codes.
+
+This project prioritizes **performance, stability, and real-world scalability**.
 
 ---
 
-## ✨ Features
+## ✨ Key Highlights
 
-### 🎮 Multiplayer Mini-Games
+- Safe **2GB+ file sharing**
+- Disk-based streaming (no RAM overload)
+- Real-time multiplayer games
+- Desktop + mobile support
+- Auto-cleanup for shared files
+- Single-port cloud deployment
+
+---
+
+## 📁 High-Capacity File Sharing
+
+- **2GB File Support**  
+  Optimized disk storage engine handles large files without crashing the server.
+
+- **Disk-Based Streaming**  
+  Files are written directly to disk instead of RAM, ensuring total system stability.
+
+- **Real-Time Toast Notifications**  
+  Instant upload and download feedback using `react-toastify`.
+
+- **Auto File Cleanup**  
+  Background task deletes shared files automatically after **1 hour**.
+
+- **Flexible Sharing Options**  
+  Share files using a 6-digit code, direct download link, or QR code.
+
+---
+
+## 🎮 Real-Time Multiplayer Mini-Games
+
+Play games while files are transferring.
+
+Available games:
 - Rock Paper Scissors
 - Tap War
 - Quick Quiz
@@ -17,35 +52,42 @@ Two users can join using a code, play multiplayer games, and securely share file
 - Reaction Time
 
 Game features:
-- Real-time gameplay with Socket.IO
-- Automatic game start when both players join
-- Score tracking and winner display
-- Sender selects the game
+- Real-time sync powered by Socket.IO
+- Zero-lag gameplay
+- Automatic start when both players join
+- Live score tracking
+- **Winner Dares** system
 
 ---
 
-### 📁 File Sharing
-- Upload files using custom codes
-- Share files via QR code or direct link
-- Download files using codes
-- Supports all file types
-- Mobile-friendly interface
+## 🛠 Performance-Focused Tech Stack
+
+| Feature | Implementation | Benefit |
+|------|---------------|--------|
+| Storage Engine | multer.diskStorage | Supports 2GB+ files safely |
+| Streaming | Disk-based I/O | Zero RAM crashes |
+| Real-Time Sync | Socket.IO | Instant gameplay updates |
+| Notifications | react-toastify | Clean, non-blocking UI |
+| Compression | compression (GZIP) | Faster local network loading |
+| Static Serving | express.static | Unified port deployment |
 
 ---
 
-## 🧰 Tech Stack
-- **Frontend:** React
-- **Backend:** Node.js, Express
-- **Real-time:** Socket.IO
-- **File Handling:** Multer
+## 🧰 Core Technologies
+
+- Frontend: React  
+- Backend: Node.js, Express  
+- Real-Time: Socket.IO  
+- File Handling: Multer  
 
 ---
 
 ## ✅ Requirements
-- **Node.js 18 or newer**
-- **npm** (comes with Node.js)
 
-Download from: https://nodejs.org
+- Node.js **18 or higher**
+- npm (included with Node.js)
+
+Download: https://nodejs.org
 
 ---
 
@@ -57,102 +99,97 @@ git clone https://github.com/Rajketha/ShareNPlay.git
 cd ShareNPlay
 ```
 
-### 2️⃣ Install root dependencies
+### 2️⃣ Install dependencies
 ```bash
 npm install
-```
-
-### 3️⃣ Install backend and frontend dependencies
-```bash
 npm run install:all
 ```
 
-### 4️⃣ Start backend and frontend together
+### 3️⃣ Build everything
 ```bash
-npm run dev
+npm run build:all
+```
+
+### 4️⃣ Start the server
+```bash
+npm start --prefix backend
 ```
 
 ---
 
-### ✅ That’s it
+## 🌐 Access
 
-- **Backend:** http://localhost:5000  
-- **Frontend:** http://localhost:3002  
+- Desktop: http://localhost:5000  
+- Mobile: Open using your system Wi-Fi IP  
+  Example: `http://192.168.1.38:5000`
 
-Open the frontend URL in your browser.
-
-No second terminal.  
-No manual backend/frontend start.  
-Works on **Windows, macOS, and Linux**.
+Both devices must be on the same network.
 
 ---
 
 ## 🔗 API Endpoints
-- `POST /upload` – Upload files
-- `GET /fileinfo/:code` – Get file information
-- `GET /download/:code` – Download file
+
+- POST `/upload` – Upload a file  
+- GET `/fileinfo/:code` – Get file metadata  
+- GET `/download/:code` – Download file  
 
 ---
 
-## 🗂 Project Structure
+## 📂 Project Structure
 
 ```
 ShareNPlay/
-├── backend/        # Express + Socket.IO server
-├── frontend/       # React application
-│   ├── public/     # index.html and static files
-│   └── src/        # React source code
-├── package.json    # Root controller (single-command setup)
+├── backend/
+│   ├── uploads/        # Auto-cleaned shared files
+│   └── server files
+├── frontend/
+│   ├── public/
+│   └── src/
+├── package.json
 ├── README.md
 └── .gitignore
 ```
 
 ---
 
+## ☁️ Deployment Checklist
+
+- Mount a persistent volume to:
+  ```
+  /backend/uploads
+  ```
+  Prevents file loss on restarts.
+
+- Application runs on a **single unified port**, ideal for cloud deployment.
+
+---
+
 ## 🛠 Troubleshooting
 
-### Port already in use
+**Port already in use**
 ```bash
 netstat -ano | findstr :5000
 taskkill /PID <PID> /F
 ```
 
-### Common issues
-- Ensure Node.js version is **18+**
-- Ensure ports **3002** and **5000** are free
-- Check terminal output for errors
-
----
-
-## 🚀 Deployment
-
-### Build frontend
-```bash
-cd frontend
-npm run build
-```
-
-Serve the build folder:
-```bash
-npx serve -s build
-```
+**Common checks**
+- Node.js version is 18+
+- Port 5000 is free
+- Backend logs show no errors
 
 ---
 
 ## 📄 License
+
 This project is licensed under the **MIT License**.
 
 ---
 
-## 🤝 Contributing
-1. Fork the repository
-2. Create a new branch
-3. Make your changes
-4. Test thoroughly
-5. Submit a pull request
+## 🧠 Design Philosophy
 
----
+Performance first.  
+No RAM abuse.  
+No fragile demos.
 
-**This project is designed to run with one clear flow:  
-clone → install → run.  
-If it doesn’t work with the steps above, the setup is wrong.**
+Clone → Install → Run.  
+If it doesn’t work this way, the setup is wrong.
