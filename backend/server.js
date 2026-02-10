@@ -777,7 +777,33 @@ app.use(express.static(buildPath));
 app.get('*', (req, res) => {
   res.sendFile(path.join(buildPath, 'index.html'));
 });
+const UPLOADS_DIR = path.join(__dirname, 'uploads');
+const FILE_EXPIRY_MS = 60 * 60 * 1000; // 1 Hour in milliseconds
 
+const cleanupFiles = () => {
+  fs.readdir(UPLOADS_DIR, (err, files) => {
+    if (err) return console.error('Cleanup error:', err);
+
+    files.forEach(file => {
+      const filePath = path.join(UPLOADS_DIR, file);
+      fs.stat(filePath, (err, stats) => {
+        if (err) return;
+
+        const now = Date.now();
+        const fileAge = now - stats.mtimeMs;
+
+        if (fileAge > FILE_EXPIRY_MS) {
+          fs.unlink(filePath, (err) => {
+            if (!err) console.log(`🧹 Auto-Cleanup: Removed expired file: ${file}`);
+          });
+        }
+      });
+    });
+  });
+};
+
+// Run cleanup every 15 minutes
+setInterval(cleanupFiles, 15 * 60 * 1000);
 // --- YOUR EXISTING SERVER.LISTEN BLOCK FOLLOWS ---
 // --- SERVER START ---
 const PORT = process.env.PORT || 5000;
