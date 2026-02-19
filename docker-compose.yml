@@ -3,15 +3,16 @@ services:
     image: rajketha/sharenplay:latest
     container_name: sharenplay-app
     ports:
-      - "5000:5000"
+      - "5000:7860"
     volumes:
       # Persist uploaded files — they survive container restarts
       - sharenplay-uploads:/app/backend/uploads
     environment:
       - NODE_ENV=production
+      - PORT=7860
     restart: unless-stopped
     healthcheck:
-      test: [ "CMD", "wget", "-qO-", "http://localhost:${PORT:-5000}/api/health" ]
+      test: [ "CMD", "wget", "-qO-", "http://localhost:7860/api/health" ]
       interval: 30s
       timeout: 10s
       retries: 3
