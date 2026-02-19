@@ -38,12 +38,12 @@ const storage = multer.diskStorage({
   },
   filename: (req, file, cb) => {
     // Logic: Keep original name but add a timestamp to prevent overwriting
-    cb(null, Date.now() + '-' + file.originalname); 
+    cb(null, Date.now() + '-' + file.originalname);
   }
 });
 
 // 3. Set your new high-capacity limit (e.g., 2GB)
-const upload = multer({ 
+const upload = multer({
   storage: storage,
   limits: {
     fileSize: 2 * 1024 * 1024 * 1024 // 2GB limit in bytes
@@ -144,479 +144,477 @@ function getRandomTypingText() {
 // Socket.IO event handlers
 io.on('connection', (socket) => {
   console.log('User connected:', socket.id);
-  
+
   // Add error handling for socket events
   socket.on('error', (error) => {
     console.error('Socket error:', error);
   });
-  
-  
   socket.on('downloadFinished', (data) => {
     // Logic: Notify the user the transfer is complete
     console.log(`Transfer complete for: ${data.fileName}`);
-    
   });
-  socket.on('disconnect', (reason) => {
-    console.log('User disconnected:', socket.id, 'Reason:', reason);
-    // Clean up player data
-    const player = players.get(socket.id);
-    if (player) {
-      const game = games.get(player.roomCode);
-      if (game) {
-        game.players = game.players.filter(id => id !== socket.id);
-        if (game.players.length === 0) {
-          games.delete(player.roomCode);
-          console.log(`Game ${player.roomCode} deleted - no players left`);
-        }
-      }
-      players.delete(socket.id);
-    }
-  });
-
-  socket.on('createGame', (data) => {
-    const roomCode = generateRoomCode();
-    const gameType = data.gameType || 'rock-paper-scissors';
-    
-    games.set(roomCode, {
-      id: roomCode,
-      type: gameType,
-      players: [socket.id],
-      scores: { [socket.id]: 0 },
-      currentRound: 0,
-      maxRounds: GAMES[gameType].rounds,
-      status: 'waiting',
-      gameData: {},
-      dares: { player1: '', player2: '' } // <-- set sender's dare
-    });
-    
-    players.set(socket.id, { roomCode, role: 'sender' });
-    socket.join(roomCode);
-    
-    socket.emit('gameCreated', { roomCode, gameType });
-    console.log(`Game created: ${roomCode} (${gameType})`);
-  });
-
-  // Handle file code as room code for existing games
-  socket.on('joinRoom', (data) => {
-    try {
-      const { code, playerType, dare, selectedGame } = data;
-      console.log('JoinRoom event received:', { code, playerType, dare, selectedGame });
-      
-      // Check if this is a file code that should create a game
-      if (playerType === 'sender') {
-        // Create game with file code as room code
-        let gameType = selectedGame || 'rock-paper-scissors';
-        
-        // Convert frontend game names to backend format
-        const gameNameMap = {
-          'rockPaperScissors': 'rock-paper-scissors',
-          'tapWar': 'tap-war',
-          'quickQuiz': 'quick-quiz',
-          'emojiMemory': 'emoji-memory',
-          'typingSpeed': 'typing-speed',
-          'reactionTime': 'reaction-time'
-        };
-        
-        if (gameNameMap[selectedGame]) {
-          gameType = gameNameMap[selectedGame];
-        }
-        
-        // Validate game type exists
-        if (!GAMES[gameType]) {
-          console.error(`Invalid game type: ${gameType}, falling back to rock-paper-scissors`);
-          gameType = 'rock-paper-scissors';
-        }
-        
-        games.set(code, {
-          id: code,
-          type: gameType,
-          players: [socket.id],
-          scores: { [socket.id]: 0 },
-          currentRound: 0,
-          maxRounds: GAMES[gameType].rounds,
-          status: 'waiting',
-          gameData: {},
-          dares: { player1: dare || '', player2: '' } // <-- set sender's dare
-        });
-        
-        players.set(socket.id, { roomCode: code, role: 'sender' });
-        socket.join(code);
-        
-        socket.emit('gameCreated', { roomCode: code, gameType });
-        console.log(`Game created with file code: ${code} (${gameType})`);
-      } else if (playerType === 'receiver') {
-        // Join existing game with file code
-        const game = games.get(code);
-        console.log('Receiver joined with dare:', dare);
-        if (game) {
-          game.dares = game.dares || { player1: '', player2: '' };
-          game.dares.player2 = dare || '';
-          console.log('Stored receiver dare:', game.dares.player2);
-        }
-        
-        if (!game) {
-          socket.emit('error', { message: 'Game not found. Make sure the sender has joined first.' });
-          return;
-        }
-        
-        if (game.players.length >= 2) {
-          socket.emit('error', { message: 'Game is full' });
-          return;
-        }
-        
-        game.players.push(socket.id);
-        game.scores[socket.id] = 0;
-        players.set(socket.id, { roomCode: code, role: 'receiver' });
-        socket.join(code);
-        
-        socket.emit('gameJoined', { roomCode: code, gameType: game.type });
-        
-        // Start game if both players joined
-        if (game.players.length === 2) {
-          game.status = 'playing';
-          game.currentRound = 1;
-          // Ensure dares are set for both players
-          if (!game.dares) game.dares = {};
-          if (!game.dares.player1) game.dares.player1 = game.dares.sender || game.dares.player1 || '';
-          if (!game.dares.player2) game.dares.player2 = game.dares.receiver || game.dares.player2 || '';
-          if (game.type === 'emoji-memory') {
-            const sequence = generateEmojiSequence();
-            game.currentSequence = sequence;
-            io.to(code).emit('gameStart', {
-              gameType: game.type,
-              round: game.currentRound,
-              maxRounds: game.maxRounds,
-              playerMap: {
-                player1: game.players[0],
-                player2: game.players[1]
-              },
-              gameData: { sequence }
-            });
-            console.log(`Game started: ${code}`);
-          } else if (game.type === 'quick-quiz') {
-            io.to(code).emit('gameStart', {
-              gameType: game.type,
-              round: game.currentRound,
-              maxRounds: game.maxRounds,
-              playerMap: {
-                player1: game.players[0],
-                player2: game.players[1]
-              },
-              gameData: {
-                question: GAMES['quick-quiz'].questions[0].question
-              }
-            });
-            console.log(`Game started: ${code}`);
-          } else if (game.type === 'typing-speed') {
-            const text = getRandomTypingText();
-            game.currentText = text;
-            io.to(code).emit('gameStart', {
-              gameType: game.type,
-              round: game.currentRound,
-              maxRounds: game.maxRounds,
-              playerMap: {
-                player1: game.players[0],
-                player2: game.players[1]
-              },
-              gameData: { text }
-            });
-            console.log(`Game started: ${code}`);
-          } else {
-            io.to(code).emit('gameStart', {
-              gameType: game.type,
-              round: game.currentRound,
-              maxRounds: game.maxRounds,
-              playerMap: {
-                player1: game.players[0],
-                player2: game.players[1]
-              }
-            });
-            console.log(`Game started: ${code}`);
-          }
-        }
-      }
-    } catch (error) {
-      console.error('Error in joinRoom:', error);
-      socket.emit('error', { message: 'Server error occurred. Please try again.' });
-    }
-  });
-
-  socket.on('joinGame', (data) => {
-    const { roomCode } = data;
-    const game = games.get(roomCode);
-    
-    if (!game) {
-      socket.emit('error', { message: 'Game not found' });
-      return;
-    }
-    
-    if (game.players.length >= 2) {
-      socket.emit('error', { message: 'Game is full' });
-      return;
-    }
-    
-    game.players.push(socket.id);
-    game.scores[socket.id] = 0;
-    players.set(socket.id, { roomCode, role: 'receiver' });
-    socket.join(roomCode);
-    
-    socket.emit('gameJoined', { roomCode, gameType: game.type });
-    
-    // Start game if both players joined
-    if (game.players.length === 2) {
-      game.status = 'playing';
-      game.currentRound = 1;
-      
-      io.to(roomCode).emit('gameStart', {
-        gameType: game.type,
-        round: game.currentRound,
-        maxRounds: game.maxRounds,
-        playerMap: {
-          player1: game.players[0],
-          player2: game.players[1]
-        }
-      });
-      
-      console.log(`Game started: ${roomCode}`);
-    }
-  });
-
-  socket.on('gameAction', (data) => {
-    const player = players.get(socket.id);
-    if (!player) return;
-    
+});
+socket.on('disconnect', (reason) => {
+  console.log('User disconnected:', socket.id, 'Reason:', reason);
+  // Clean up player data
+  const player = players.get(socket.id);
+  if (player) {
     const game = games.get(player.roomCode);
-    if (!game || game.status !== 'playing') return;
-    
-    const { action, value } = data;
-    
-    if (!game.gameData[socket.id]) {
-      game.gameData[socket.id] = {};
-    }
-    
-    game.gameData[socket.id][game.currentRound] = { action, value };
-    
-    // Check if both players have made their moves
-    const player1 = game.players[0];
-    const player2 = game.players[1];
-    
-    if (game.gameData[player1]?.[game.currentRound] && 
-        game.gameData[player2]?.[game.currentRound]) {
-      
-      // Process round result
-      let roundResult;
-      
-      switch (game.type) {
-        case 'rock-paper-scissors':
-          const p1Choice = game.gameData[player1][game.currentRound].action;
-          const p2Choice = game.gameData[player2][game.currentRound].action;
-          const winner = getWinner(p1Choice, p2Choice, game.type);
-          
-          if (winner === 'player1') {
-            game.scores[player1]++;
-          } else if (winner === 'player2') {
-            game.scores[player2]++;
-          }
-          
-          roundResult = {
-            player1: { choice: p1Choice, score: game.scores[player1] },
-            player2: { choice: p2Choice, score: game.scores[player2] },
-            winner: winner
-          };
-          break;
-          
-        case 'tap-war':
-          const p1Taps = game.gameData[player1][game.currentRound].value;
-          const p2Taps = game.gameData[player2][game.currentRound].value;
-          
-          if (p1Taps > p2Taps) {
-            game.scores[player1]++;
-          } else if (p2Taps > p1Taps) {
-            game.scores[player2]++;
-          }
-          
-          roundResult = {
-            player1: { taps: p1Taps, score: game.scores[player1] },
-            player2: { taps: p2Taps, score: game.scores[player2] },
-            winner: p1Taps > p2Taps ? 'player1' : p2Taps > p1Taps ? 'player2' : 'tie'
-          };
-          break;
-          
-        case 'quick-quiz':
-          const p1Answer = game.gameData[player1][game.currentRound].value;
-          const p2Answer = game.gameData[player2][game.currentRound].value;
-          const p1Time = game.gameData[player1][game.currentRound].time;
-          const p2Time = game.gameData[player2][game.currentRound].time;
-          
-          const question = GAMES[game.type].questions[game.currentRound - 1];
-          const correctAnswer = question.answer.toLowerCase();
-          
-          let quizWinner = 'tie';
-          if (p1Answer.toLowerCase() === correctAnswer && p2Answer.toLowerCase() !== correctAnswer) {
-            game.scores[player1]++;
-            quizWinner = 'player1';
-          } else if (p2Answer.toLowerCase() === correctAnswer && p1Answer.toLowerCase() !== correctAnswer) {
-            game.scores[player2]++;
-            quizWinner = 'player2';
-          } else if (p1Answer.toLowerCase() === correctAnswer && p2Answer.toLowerCase() === correctAnswer) {
-            if (p1Time < p2Time) {
-              game.scores[player1]++;
-              quizWinner = 'player1';
-            } else if (p2Time < p1Time) {
-              game.scores[player2]++;
-              quizWinner = 'player2';
-            }
-          }
-          
-          roundResult = {
-            player1: { answer: p1Answer, time: p1Time, score: game.scores[player1] },
-            player2: { answer: p2Answer, time: p2Time, score: game.scores[player2] },
-            correctAnswer: correctAnswer,
-            winner: quizWinner
-          };
-          break;
-          
-        case 'emoji-memory':
-          const p1Score = game.gameData[player1][game.currentRound].value;
-          const p2Score = game.gameData[player2][game.currentRound].value;
-          
-          if (p1Score > p2Score) {
-            game.scores[player1]++;
-          } else if (p2Score > p1Score) {
-            game.scores[player2]++;
-          }
-          
-          roundResult = {
-            player1: { score: p1Score, totalScore: game.scores[player1] },
-            player2: { score: p2Score, totalScore: game.scores[player2] },
-            winner: p1Score > p2Score ? 'player1' : p2Score > p1Score ? 'player2' : 'tie'
-          };
-          break;
-          
-        case 'typing-speed':
-          const p1WPM = game.gameData[player1][game.currentRound].value;
-          const p2WPM = game.gameData[player2][game.currentRound].value;
-          
-          if (p1WPM > p2WPM) {
-            game.scores[player1]++;
-          } else if (p2WPM > p1WPM) {
-            game.scores[player2]++;
-          }
-          
-          roundResult = {
-            player1: { wpm: p1WPM, totalScore: game.scores[player1] },
-            player2: { wpm: p2WPM, totalScore: game.scores[player2] },
-            winner: p1WPM > p2WPM ? 'player1' : p2WPM > p1WPM ? 'player2' : 'tie'
-          };
-          break;
-          
-        case 'reaction-time':
-          const p1ReactionTime = game.gameData[player1][game.currentRound].value;
-          const p2ReactionTime = game.gameData[player2][game.currentRound].value;
-          
-          if (p1ReactionTime < p2ReactionTime) {
-            game.scores[player1]++;
-          } else if (p2ReactionTime < p1ReactionTime) {
-            game.scores[player2]++;
-          }
-          
-          roundResult = {
-            player1: { time: p1ReactionTime, totalScore: game.scores[player1] },
-            player2: { time: p2ReactionTime, totalScore: game.scores[player2] },
-            winner: p1ReactionTime < p2ReactionTime ? 'player1' : p2ReactionTime < p1ReactionTime ? 'player2' : 'tie'
-          };
-          break;
+    if (game) {
+      game.players = game.players.filter(id => id !== socket.id);
+      if (game.players.length === 0) {
+        games.delete(player.roomCode);
+        console.log(`Game ${player.roomCode} deleted - no players left`);
       }
-      
-      // Defensive check before emitting roundResult
-      if (!roundResult || !game.scores || !game.currentRound || !player1 || !player2) {
-        console.error('Attempted to emit invalid roundResult:', {
-          roundResult,
-          scores: game.scores,
-          round: game.currentRound,
-          player1,
-          player2,
-          gameType: game.type
-        });
+    }
+    players.delete(socket.id);
+  }
+});
+
+socket.on('createGame', (data) => {
+  const roomCode = generateRoomCode();
+  const gameType = data.gameType || 'rock-paper-scissors';
+
+  games.set(roomCode, {
+    id: roomCode,
+    type: gameType,
+    players: [socket.id],
+    scores: { [socket.id]: 0 },
+    currentRound: 0,
+    maxRounds: GAMES[gameType].rounds,
+    status: 'waiting',
+    gameData: {},
+    dares: { player1: '', player2: '' } // <-- set sender's dare
+  });
+
+  players.set(socket.id, { roomCode, role: 'sender' });
+  socket.join(roomCode);
+
+  socket.emit('gameCreated', { roomCode, gameType });
+  console.log(`Game created: ${roomCode} (${gameType})`);
+});
+
+// Handle file code as room code for existing games
+socket.on('joinRoom', (data) => {
+  try {
+    const { code, playerType, dare, selectedGame } = data;
+    console.log('JoinRoom event received:', { code, playerType, dare, selectedGame });
+
+    // Check if this is a file code that should create a game
+    if (playerType === 'sender') {
+      // Create game with file code as room code
+      let gameType = selectedGame || 'rock-paper-scissors';
+
+      // Convert frontend game names to backend format
+      const gameNameMap = {
+        'rockPaperScissors': 'rock-paper-scissors',
+        'tapWar': 'tap-war',
+        'quickQuiz': 'quick-quiz',
+        'emojiMemory': 'emoji-memory',
+        'typingSpeed': 'typing-speed',
+        'reactionTime': 'reaction-time'
+      };
+
+      if (gameNameMap[selectedGame]) {
+        gameType = gameNameMap[selectedGame];
+      }
+
+      // Validate game type exists
+      if (!GAMES[gameType]) {
+        console.error(`Invalid game type: ${gameType}, falling back to rock-paper-scissors`);
+        gameType = 'rock-paper-scissors';
+      }
+
+      games.set(code, {
+        id: code,
+        type: gameType,
+        players: [socket.id],
+        scores: { [socket.id]: 0 },
+        currentRound: 0,
+        maxRounds: GAMES[gameType].rounds,
+        status: 'waiting',
+        gameData: {},
+        dares: { player1: dare || '', player2: '' } // <-- set sender's dare
+      });
+
+      players.set(socket.id, { roomCode: code, role: 'sender' });
+      socket.join(code);
+
+      socket.emit('gameCreated', { roomCode: code, gameType });
+      console.log(`Game created with file code: ${code} (${gameType})`);
+    } else if (playerType === 'receiver') {
+      // Join existing game with file code
+      const game = games.get(code);
+      console.log('Receiver joined with dare:', dare);
+      if (game) {
+        game.dares = game.dares || { player1: '', player2: '' };
+        game.dares.player2 = dare || '';
+        console.log('Stored receiver dare:', game.dares.player2);
+      }
+
+      if (!game) {
+        socket.emit('error', { message: 'Game not found. Make sure the sender has joined first.' });
         return;
       }
-      const roundResultPayload = {
-        result: roundResult,
+
+      if (game.players.length >= 2) {
+        socket.emit('error', { message: 'Game is full' });
+        return;
+      }
+
+      game.players.push(socket.id);
+      game.scores[socket.id] = 0;
+      players.set(socket.id, { roomCode: code, role: 'receiver' });
+      socket.join(code);
+
+      socket.emit('gameJoined', { roomCode: code, gameType: game.type });
+
+      // Start game if both players joined
+      if (game.players.length === 2) {
+        game.status = 'playing';
+        game.currentRound = 1;
+        // Ensure dares are set for both players
+        if (!game.dares) game.dares = {};
+        if (!game.dares.player1) game.dares.player1 = game.dares.sender || game.dares.player1 || '';
+        if (!game.dares.player2) game.dares.player2 = game.dares.receiver || game.dares.player2 || '';
+        if (game.type === 'emoji-memory') {
+          const sequence = generateEmojiSequence();
+          game.currentSequence = sequence;
+          io.to(code).emit('gameStart', {
+            gameType: game.type,
+            round: game.currentRound,
+            maxRounds: game.maxRounds,
+            playerMap: {
+              player1: game.players[0],
+              player2: game.players[1]
+            },
+            gameData: { sequence }
+          });
+          console.log(`Game started: ${code}`);
+        } else if (game.type === 'quick-quiz') {
+          io.to(code).emit('gameStart', {
+            gameType: game.type,
+            round: game.currentRound,
+            maxRounds: game.maxRounds,
+            playerMap: {
+              player1: game.players[0],
+              player2: game.players[1]
+            },
+            gameData: {
+              question: GAMES['quick-quiz'].questions[0].question
+            }
+          });
+          console.log(`Game started: ${code}`);
+        } else if (game.type === 'typing-speed') {
+          const text = getRandomTypingText();
+          game.currentText = text;
+          io.to(code).emit('gameStart', {
+            gameType: game.type,
+            round: game.currentRound,
+            maxRounds: game.maxRounds,
+            playerMap: {
+              player1: game.players[0],
+              player2: game.players[1]
+            },
+            gameData: { text }
+          });
+          console.log(`Game started: ${code}`);
+        } else {
+          io.to(code).emit('gameStart', {
+            gameType: game.type,
+            round: game.currentRound,
+            maxRounds: game.maxRounds,
+            playerMap: {
+              player1: game.players[0],
+              player2: game.players[1]
+            }
+          });
+          console.log(`Game started: ${code}`);
+        }
+      }
+    }
+  } catch (error) {
+    console.error('Error in joinRoom:', error);
+    socket.emit('error', { message: 'Server error occurred. Please try again.' });
+  }
+});
+
+socket.on('joinGame', (data) => {
+  const { roomCode } = data;
+  const game = games.get(roomCode);
+
+  if (!game) {
+    socket.emit('error', { message: 'Game not found' });
+    return;
+  }
+
+  if (game.players.length >= 2) {
+    socket.emit('error', { message: 'Game is full' });
+    return;
+  }
+
+  game.players.push(socket.id);
+  game.scores[socket.id] = 0;
+  players.set(socket.id, { roomCode, role: 'receiver' });
+  socket.join(roomCode);
+
+  socket.emit('gameJoined', { roomCode, gameType: game.type });
+
+  // Start game if both players joined
+  if (game.players.length === 2) {
+    game.status = 'playing';
+    game.currentRound = 1;
+
+    io.to(roomCode).emit('gameStart', {
+      gameType: game.type,
+      round: game.currentRound,
+      maxRounds: game.maxRounds,
+      playerMap: {
+        player1: game.players[0],
+        player2: game.players[1]
+      }
+    });
+
+    console.log(`Game started: ${roomCode}`);
+  }
+});
+
+socket.on('gameAction', (data) => {
+  const player = players.get(socket.id);
+  if (!player) return;
+
+  const game = games.get(player.roomCode);
+  if (!game || game.status !== 'playing') return;
+
+  const { action, value } = data;
+
+  if (!game.gameData[socket.id]) {
+    game.gameData[socket.id] = {};
+  }
+
+  game.gameData[socket.id][game.currentRound] = { action, value };
+
+  // Check if both players have made their moves
+  const player1 = game.players[0];
+  const player2 = game.players[1];
+
+  if (game.gameData[player1]?.[game.currentRound] &&
+    game.gameData[player2]?.[game.currentRound]) {
+
+    // Process round result
+    let roundResult;
+
+    switch (game.type) {
+      case 'rock-paper-scissors':
+        const p1Choice = game.gameData[player1][game.currentRound].action;
+        const p2Choice = game.gameData[player2][game.currentRound].action;
+        const winner = getWinner(p1Choice, p2Choice, game.type);
+
+        if (winner === 'player1') {
+          game.scores[player1]++;
+        } else if (winner === 'player2') {
+          game.scores[player2]++;
+        }
+
+        roundResult = {
+          player1: { choice: p1Choice, score: game.scores[player1] },
+          player2: { choice: p2Choice, score: game.scores[player2] },
+          winner: winner
+        };
+        break;
+
+      case 'tap-war':
+        const p1Taps = game.gameData[player1][game.currentRound].value;
+        const p2Taps = game.gameData[player2][game.currentRound].value;
+
+        if (p1Taps > p2Taps) {
+          game.scores[player1]++;
+        } else if (p2Taps > p1Taps) {
+          game.scores[player2]++;
+        }
+
+        roundResult = {
+          player1: { taps: p1Taps, score: game.scores[player1] },
+          player2: { taps: p2Taps, score: game.scores[player2] },
+          winner: p1Taps > p2Taps ? 'player1' : p2Taps > p1Taps ? 'player2' : 'tie'
+        };
+        break;
+
+      case 'quick-quiz':
+        const p1Answer = game.gameData[player1][game.currentRound].value;
+        const p2Answer = game.gameData[player2][game.currentRound].value;
+        const p1Time = game.gameData[player1][game.currentRound].time;
+        const p2Time = game.gameData[player2][game.currentRound].time;
+
+        const question = GAMES[game.type].questions[game.currentRound - 1];
+        const correctAnswer = question.answer.toLowerCase();
+
+        let quizWinner = 'tie';
+        if (p1Answer.toLowerCase() === correctAnswer && p2Answer.toLowerCase() !== correctAnswer) {
+          game.scores[player1]++;
+          quizWinner = 'player1';
+        } else if (p2Answer.toLowerCase() === correctAnswer && p1Answer.toLowerCase() !== correctAnswer) {
+          game.scores[player2]++;
+          quizWinner = 'player2';
+        } else if (p1Answer.toLowerCase() === correctAnswer && p2Answer.toLowerCase() === correctAnswer) {
+          if (p1Time < p2Time) {
+            game.scores[player1]++;
+            quizWinner = 'player1';
+          } else if (p2Time < p1Time) {
+            game.scores[player2]++;
+            quizWinner = 'player2';
+          }
+        }
+
+        roundResult = {
+          player1: { answer: p1Answer, time: p1Time, score: game.scores[player1] },
+          player2: { answer: p2Answer, time: p2Time, score: game.scores[player2] },
+          correctAnswer: correctAnswer,
+          winner: quizWinner
+        };
+        break;
+
+      case 'emoji-memory':
+        const p1Score = game.gameData[player1][game.currentRound].value;
+        const p2Score = game.gameData[player2][game.currentRound].value;
+
+        if (p1Score > p2Score) {
+          game.scores[player1]++;
+        } else if (p2Score > p1Score) {
+          game.scores[player2]++;
+        }
+
+        roundResult = {
+          player1: { score: p1Score, totalScore: game.scores[player1] },
+          player2: { score: p2Score, totalScore: game.scores[player2] },
+          winner: p1Score > p2Score ? 'player1' : p2Score > p1Score ? 'player2' : 'tie'
+        };
+        break;
+
+      case 'typing-speed':
+        const p1WPM = game.gameData[player1][game.currentRound].value;
+        const p2WPM = game.gameData[player2][game.currentRound].value;
+
+        if (p1WPM > p2WPM) {
+          game.scores[player1]++;
+        } else if (p2WPM > p1WPM) {
+          game.scores[player2]++;
+        }
+
+        roundResult = {
+          player1: { wpm: p1WPM, totalScore: game.scores[player1] },
+          player2: { wpm: p2WPM, totalScore: game.scores[player2] },
+          winner: p1WPM > p2WPM ? 'player1' : p2WPM > p1WPM ? 'player2' : 'tie'
+        };
+        break;
+
+      case 'reaction-time':
+        const p1ReactionTime = game.gameData[player1][game.currentRound].value;
+        const p2ReactionTime = game.gameData[player2][game.currentRound].value;
+
+        if (p1ReactionTime < p2ReactionTime) {
+          game.scores[player1]++;
+        } else if (p2ReactionTime < p1ReactionTime) {
+          game.scores[player2]++;
+        }
+
+        roundResult = {
+          player1: { time: p1ReactionTime, totalScore: game.scores[player1] },
+          player2: { time: p2ReactionTime, totalScore: game.scores[player2] },
+          winner: p1ReactionTime < p2ReactionTime ? 'player1' : p2ReactionTime < p1ReactionTime ? 'player2' : 'tie'
+        };
+        break;
+    }
+
+    // Defensive check before emitting roundResult
+    if (!roundResult || !game.scores || !game.currentRound || !player1 || !player2) {
+      console.error('Attempted to emit invalid roundResult:', {
+        roundResult,
+        scores: game.scores,
+        round: game.currentRound,
+        player1,
+        player2,
+        gameType: game.type
+      });
+      return;
+    }
+    const roundResultPayload = {
+      result: roundResult,
+      scores: {
+        player1: game.scores[player1],
+        player2: game.scores[player2]
+      },
+      round: game.currentRound,
+      playerMap: {
+        player1,
+        player2
+      }
+    };
+    console.log('Emitting roundResult:', JSON.stringify(roundResultPayload));
+    io.to(player.roomCode).emit('roundResult', roundResultPayload);
+
+    // Check if a player has reached 2 points, or if max rounds reached
+    if (
+      game.scores[player1] >= 2 ||
+      game.scores[player2] >= 2 ||
+      game.currentRound >= game.maxRounds
+    ) {
+      const finalScores = {
+        player1: { score: game.scores[player1] },
+        player2: { score: game.scores[player2] },
+        winner: game.scores[player1] > game.scores[player2] ? 'player1' :
+          game.scores[player2] > game.scores[player1] ? 'player2' : 'tie'
+      };
+      io.to(player.roomCode).emit('gameEnd', {
+        winner: finalScores.winner,
+        finalScores,
         scores: {
           player1: game.scores[player1],
           player2: game.scores[player2]
         },
-        round: game.currentRound,
-        playerMap: {
-          player1,
-          player2
+        dares: game.dares || { player1: '', player2: '' }
+      });
+      games.delete(player.roomCode);
+      console.log(`Game ended: ${player.roomCode}`);
+    } else {
+      // Start next round (no maxRounds check)
+      game.currentRound++;
+      setTimeout(() => {
+        let gameData;
+        if (game.type === 'quick-quiz') {
+          gameData = { question: GAMES['quick-quiz'].questions[game.currentRound - 1].question };
+        } else if (game.type === 'emoji-memory') {
+          const sequence = generateEmojiSequence();
+          game.currentSequence = sequence;
+          gameData = { sequence };
+        } else if (game.type === 'typing-speed') {
+          const text = getRandomTypingText();
+          game.currentText = text;
+          gameData = { text };
         }
-      };
-      console.log('Emitting roundResult:', JSON.stringify(roundResultPayload));
-      io.to(player.roomCode).emit('roundResult', roundResultPayload);
-      
-      // Check if a player has reached 2 points, or if max rounds reached
-      if (
-        game.scores[player1] >= 2 ||
-        game.scores[player2] >= 2 ||
-        game.currentRound >= game.maxRounds
-      ) {
-        const finalScores = {
-          player1: { score: game.scores[player1] },
-          player2: { score: game.scores[player2] },
-          winner: game.scores[player1] > game.scores[player2] ? 'player1' :
-                 game.scores[player2] > game.scores[player1] ? 'player2' : 'tie'
-        };
-        io.to(player.roomCode).emit('gameEnd', {
-          winner: finalScores.winner,
-          finalScores,
-          scores: {
-            player1: game.scores[player1],
-            player2: game.scores[player2]
-          },
-          dares: game.dares || { player1: '', player2: '' }
+        io.to(player.roomCode).emit('nextRound', {
+          round: game.currentRound,
+          maxRounds: game.maxRounds, // for UI only
+          gameData
         });
-        games.delete(player.roomCode);
-        console.log(`Game ended: ${player.roomCode}`);
-      } else {
-        // Start next round (no maxRounds check)
-        game.currentRound++;
-        setTimeout(() => { 
-          let gameData;
-          if (game.type === 'quick-quiz') {
-            gameData = { question: GAMES['quick-quiz'].questions[game.currentRound - 1].question };
-          } else if (game.type === 'emoji-memory') {
-            const sequence = generateEmojiSequence();
-            game.currentSequence = sequence;
-            gameData = { sequence };
-          } else if (game.type === 'typing-speed') {
-            const text = getRandomTypingText();
-            game.currentText = text;
-            gameData = { text };
-          }
-          io.to(player.roomCode).emit('nextRound', {
-            round: game.currentRound,
-            maxRounds: game.maxRounds, // for UI only
-            gameData
-          }); 
-        }, 2000);
-      }
+      }, 2000);
     }
-  });
+  }
+});
 
-  socket.on('disconnect', () => {
-    console.log('User disconnected:', socket.id);
-    
-    const player = players.get(socket.id);
-    if (player) {
-      const game = games.get(player.roomCode);
-      if (game) {
-        io.to(player.roomCode).emit('playerDisconnected');
-        games.delete(player.roomCode);
-      }
-      players.delete(socket.id);
+socket.on('disconnect', () => {
+  console.log('User disconnected:', socket.id);
+
+  const player = players.get(socket.id);
+  if (player) {
+    const game = games.get(player.roomCode);
+    if (game) {
+      io.to(player.roomCode).emit('playerDisconnected');
+      games.delete(player.roomCode);
     }
-  });
+    players.delete(socket.id);
+  }
+});
 });
 
 // File storage (in-memory for demo)
@@ -668,9 +666,9 @@ app.post('/upload', upload.single('file'), (req, res) => {
     if (!req.file) {
       return res.status(400).json({ error: 'No file uploaded' });
     }
-    
+
     const code = Math.random().toString(36).substring(2, 8).toUpperCase();
-    
+
     // Logic: Save 'path' to the hard drive instead of the buffer
     files.set(code, {
       fileName: req.file.originalname,
@@ -678,22 +676,23 @@ app.post('/upload', upload.single('file'), (req, res) => {
       path: req.file.path, // <--- Correct: Uses Disk Path
       uploadedAt: new Date()
     });
-    
+
     fileCodes.set(code, true);
     res.json({ code, fileName: req.file.originalname });
   } catch (error) {
-    res.status(500).json({ error: 'Upload failed' });
+    console.error('❌ Upload failed:', error);
+    res.status(500).json({ error: 'Upload failed', details: error.message });
   }
 });
 
 app.get('/fileinfo/:code', (req, res) => {
   const { code } = req.params;
   const file = files.get(code);
-  
+
   if (!file) {
     return res.status(404).json({ error: 'File not found' });
   }
-  
+
   res.json({
     fileName: file.fileName,
     mimetype: file.mimetype,
@@ -704,7 +703,7 @@ app.get('/fileinfo/:code', (req, res) => {
 app.get('/download/:code', (req, res) => {
   const { code } = req.params;
   const file = files.get(code);
-  
+
   if (!file || !file.path) {
     return res.status(404).json({ error: 'File not found' });
   }
@@ -730,11 +729,11 @@ app.get('/dare-categories', (req, res) => {
 app.get('/random-dare/:category', (req, res) => {
   const { category } = req.params;
   const categoryDares = dares[category];
-  
+
   if (!categoryDares) {
     return res.status(404).json({ error: 'Category not found' });
   }
-  
+
   const randomDare = categoryDares[Math.floor(Math.random() * categoryDares.length)];
   res.json({ dare: randomDare });
 });
@@ -814,7 +813,7 @@ server.listen(PORT, '0.0.0.0', () => {
 
   // Use the real Wi-Fi IP for the automatic browser launch
   const targetUrl = `http://${addresses[0] || 'localhost'}:${PORT}`;
-  
+
   console.log(`🚀 ShareNPlay Production Server running on port ${PORT}`);
   console.log(`👉 Access everything at: http://localhost:${PORT}`);
   addresses.forEach(ip => console.log(`👉 Mobile Access: http://${ip}:${PORT}`));
@@ -823,10 +822,10 @@ server.listen(PORT, '0.0.0.0', () => {
   if (process.env.NODE_ENV !== 'production') {
     const { exec } = require('child_process');
     const startCmd = process.platform === 'win32' ? 'start' : 'open';
-  
+
     setTimeout(() => {
       exec(`${startCmd} ${targetUrl}`);
     }, 1000);
   }
-  
+
 });

@@ -1,0 +1,39 @@
+# Files and directories to exclude from the Docker build context
+# This makes builds faster by not sending unnecessary files to Docker
+
+# Git
+.git
+.gitignore
+.gitattributes
+
+# Node modules (will be installed fresh inside Docker)
+node_modules
+frontend/node_modules
+backend/node_modules
+
+# Frontend build (will be created inside Docker)
+frontend/build
+
+# Logs
+*.log
+npm-debug.log*
+
+# Environment files (don't leak secrets into image)
+.env
+.env.local
+.env.production
+.env.development
+
+# Windows batch files (runtime only, not needed in container)
+*.bat
+
+# Uploaded files (these go in a Docker volume, not the image)
+backend/uploads/*
+
+# Docs
+README.md
+*.txt
+
+# IDE files
+.vscode
+.idea

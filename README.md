@@ -2,8 +2,9 @@
 
 **ShareNPlay** is a high-capacity, real-time multiplayer mini-games and file-sharing web application built using **React, Node.js, Express, and Socket.IO**.
 
-It is designed for seamless connectivity between **desktop and mobile devices**.  
-Two users can join using a **6-digit code**, play real-time multiplayer games, and securely share files up to **2GB** using direct links or QR codes — without crashing the server.
+🔗 **Live Demo**: [https://huggingface.co/spaces/Rajketha/sharenplay](https://huggingface.co/spaces/Rajketha/sharenplay)
+
+It is designed for seamless connectivity between **desktop and mobile devices**. Two users can join using a **6-digit code**, play real-time multiplayer games, and securely share files up to **2GB** using direct links or QR codes — without crashing the server.
 
 This project prioritizes **performance, stability, and real-world scalability**.
 
@@ -11,127 +12,79 @@ This project prioritizes **performance, stability, and real-world scalability**.
 
 ## ✨ Key Highlights
 
-- 🚀 Safe **2GB+ file sharing**
-- 💾 Disk-based streaming (no RAM overload)
-- 🎮 Real-time multiplayer games
-- 📱 Desktop + mobile support
-- 🧹 Auto-cleanup for shared files
-- ☁️ Single-port cloud deployment
+- 🐳 **Docker Ready**: One-command setup for local and cloud.
+- 🌍 **Cloud Hosted**: Live on Hugging Face Spaces.
+- 📦 **2GB+ File Sharing**: Optimized disk-based streaming.
+- 🎮 **Multiplayer Sync**: Zero-lag gaming via Socket.IO.
+- 📱 **Mobile Optimized**: Seamless inter-device connectivity.
+- 🧹 **Auto-cleanup**: Background task for shared files.
 
 ---
 
-## 📁 High-Capacity File Sharing
+## 🚀 Quick Start (Docker - Recommended)
 
-- **2GB File Support**  
-  Optimized disk storage engine handles large files without crashing the server.
+The fastest way to run ShareNPlay on any machine.
 
-- **Disk-Based Streaming**  
-  Files are written directly to disk instead of RAM, ensuring total system stability.
+### 1️⃣ Requirements
+- [Docker Desktop](https://www.docker.com/products/docker-desktop/) installed.
 
-- **Real-Time Toast Notifications**  
-  Instant upload and download feedback using `react-toastify`.
+### 2️⃣ Run Locally
+```bash
+docker compose up --build -d
+```
+Accessible at: **http://localhost:5000**
 
-- **Auto File Cleanup**  
-  Background task deletes shared files automatically after **1 hour**.
+### 3️⃣ Direct One-Click (Windows)
+Double-click `run-anywhere.bat` in the root folder. It will find your local IP and start the app so you can connect your phone instantly!
 
-- **Flexible Sharing Options**  
-  Share files using a 6-digit code, direct download link, or QR code.
+---
+
+## ☁️ Deployment (Hugging Face Spaces)
+
+ShareNPlay is optimized for card-free hosting on **Hugging Face Spaces**.
+
+1. Create a [New Space](https://huggingface.co/new-space) on Hugging Face.
+2. Select **Docker** as the SDK.
+3. Create a `Dockerfile` in the Space with just this line:
+   ```dockerfile
+   FROM rajketha/sharenplay:latest
+   ```
+4. Click **Commit**. Your app will be live in minutes!
 
 ---
 
 ## 🎮 Real-Time Multiplayer Mini-Games
 
-Play games while files are transferring.
+Play games while files are transferring. Available games:
+- **Rock Paper Scissors**, **Tap War**, **Quick Quiz**, **Emoji Memory**, **Typing Speed**, **Reaction Time**.
 
-Available games:
-- Rock Paper Scissors
-- Tap War
-- Quick Quiz
-- Emoji Memory
-- Typing Speed
-- Reaction Time
-
-Game features:
-- ⚡ Real-time sync powered by Socket.IO
-- 🟢 Zero-lag gameplay
-- 🔄 Automatic start when both players join
-- 📊 Live score tracking
-- 🎯 **Winner Dares** system
+Features:
+- 🎯 **Winner Dares**: Winner chooses a dare category for the loser.
+- ⚡ **Live Sync**: No refresh needed, fully reactive sync powered by Socket.IO.
+- 📊 **Live Scoring**: Instant feedback and score tracking.
 
 ---
 
-## 🛠 Performance-Focused Tech Stack
+## 📁 File Sharing Capabilities
 
-| Feature | Implementation | Benefit |
-|------|---------------|--------|
-| 💾 Storage Engine | multer.diskStorage | Supports 2GB+ files safely |
-| 🔁 Streaming | Disk-based I/O | Zero RAM crashes |
-| ⚡ Real-Time Sync | Socket.IO | Instant gameplay updates |
-| 🔔 Notifications | react-toastify | Clean, non-blocking UI |
-| 📦 Compression | compression (GZIP) | Faster local network loading |
-| 🌐 Static Serving | express.static | Unified port deployment |
+- **Multer Streaming**: Files are streamed to disk (no RAM overload), supporting files of **2GB+**.
+- **Auto-Cleanup**: Temporary files are deleted automatically after **1 hour**.
+- **Secure Links**: Access limited to the 6-digit session code.
 
 ---
 
-## 🧰 Core Technologies
+## 🛠 Manual Installation (For Development)
 
-- ⚛️ Frontend: React  
-- 🟢 Backend: Node.js, Express  
-- 🔄 Real-Time: Socket.IO  
-- 📂 File Handling: Multer  
-
----
-
-## ✅ Requirements
-
+### 1️⃣ Requirements
 - Node.js **18 or higher**
-- npm (included with Node.js)
 
-Download: https://nodejs.org
-
----
-
-## 🚀 Run the Project (Single Flow)
-
-### 1️⃣ Clone the repository
-```bash
-git clone https://github.com/Rajketha/ShareNPlay.git
-cd ShareNPlay
-```
-
-### 2️⃣ Install dependencies
+### 2️⃣ Install & Run
 ```bash
 npm install
 npm run install:all
-```
-
-### 3️⃣ Build everything
-```bash
 npm run build:all
-```
-
-### 4️⃣ Start the server
-```bash
 npm start --prefix backend
 ```
-
----
-
-## 🌐 Access
-
-- 🖥 Desktop: http://localhost:5000  
-- 📱 Mobile: Open using your system Wi-Fi IP  
-  Example: `http://192.168.1.38:5000`
-
-Both devices must be on the same network.
-
----
-
-## 🔗 API Endpoints
-
-- POST `/upload` – Upload a file  
-- GET `/fileinfo/:code` – Get file metadata  
-- GET `/download/:code` – Download file  
 
 ---
 
@@ -139,43 +92,13 @@ Both devices must be on the same network.
 
 ```
 ShareNPlay/
-├── backend/
-│   ├── uploads/        # Auto-cleaned shared files
-│   └── server files
-├── frontend/
-│   ├── public/
-│   └── src/
-├── package.json
-├── README.md
-└── .gitignore
+├── backend/            # Express server & Socket.IO
+│   └── uploads/        # Persistent shared files
+├── frontend/           # React application
+├── Dockerfile          # Multi-stage production build
+├── docker-compose.yml  # Local stack config
+└── run-anywhere.bat    # Windows IP-discovery launcher
 ```
-
----
-
-## ☁️ Deployment Checklist
-
-- 📌 Mount a persistent volume to:
-  ```
-  /backend/uploads
-  ```
-  Prevents file loss on restarts.
-
-- 🚀 Application runs on a **single unified port**, ideal for cloud deployment.
-
----
-
-## 🛠 Troubleshooting
-
-**Port already in use**
-```bash
-netstat -ano | findstr :5000
-taskkill /PID <PID> /F
-```
-
-**Common checks**
-- Node.js version is 18+
-- Port 5000 is free
-- Backend logs show no errors
 
 ---
 
@@ -187,9 +110,5 @@ This project is licensed under the **MIT License**.
 
 ## 🧠 Design Philosophy
 
-Performance first.  
-No RAM abuse.  
-No fragile demos.
-
-Clone → Install → Run.  
-If it doesn’t work this way, the setup is wrong.
+Performance first. No RAM abuse. Deployment simplified.  
+If you can't run it in one command, we haven't done our job.
