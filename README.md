@@ -2,8 +2,8 @@
 
 **ShareNPlay** is a high-capacity, real-time multiplayer mini-games and file-sharing web application built using **React, Node.js, Express, and Socket.IO**.
 
-🔗 **Live Demo**: [https://rajketha-sharenplay.hf.space/]
-(https://rajketha-sharenplay.hf.space/)
+🔗 **Live Demo**: [https://rajketha-sharenplay.hf.space]
+(https://rajketha-sharenplay.hf.space/).
 
 It is designed for seamless connectivity between **desktop and mobile devices**. Two users can join using a **6-digit code**, play real-time multiplayer games, and securely share files up to **2GB** using direct links or QR codes — without crashing the server.
 
