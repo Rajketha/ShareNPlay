@@ -81,6 +81,40 @@ const GAMES = {
     rounds: 3,
     minDelay: 1000,
     maxDelay: 5000
+  },
+
+  'math-blitz': {
+    name: 'Math Blitz',
+    rounds: 3,
+    duration: 10000
+  },
+  'color-rush': {
+    name: 'Color Rush',
+    rounds: 3,
+    duration: 8000
+  },
+  'aim-master': {
+    name: 'Aim Master',
+    rounds: 3,
+    duration: 10000
+  },
+  'stickman-fight': {
+    name: 'Stickman Fight',
+    rounds: 3,
+    duration: 8000,
+    moves: ['punch', 'kick']
+  },
+  'car-racer': {
+    name: 'Car Racer',
+    rounds: 3,
+    duration: 12000,
+    lanes: 5
+  },
+  'bike-racer': {
+    name: 'Bike Racer',
+    rounds: 3,
+    duration: 15000,
+    lanes: 7
   }
 };
 

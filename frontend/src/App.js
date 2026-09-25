@@ -1,47 +1,76 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import io from 'socket.io-client';
 import axios from 'axios';
 import { QRCodeSVG } from 'qrcode.react';
 import './index.css';
 import confetti from 'canvas-confetti';
 
-const BACKEND_URL = 'http://192.168.1.38:5000';
+/* ============================================================
+   CONFIG
+   ============================================================ */
+const FRONTEND_PORT = window.location.port || '3000';
+const BACKEND_URL = 'http://localhost:5000';
+
+const GAME_IDS = [
+  'rock-paper-scissors', 'tap-war', 'quick-quiz', 'emoji-memory',
+  'typing-speed', 'reaction-time', 'math-blitz', 'color-rush',
+  'aim-master', 'stickman-fight', 'car-racer', 'bike-racer'
+];
+
+const GAME_NAMES = {
+  'rock-paper-scissors': 'Rock Paper Scissors',
+  'tap-war': 'Tap War',
+  'quick-quiz': 'Quick Quiz',
+  'emoji-memory': 'Emoji Memory',
+  'typing-speed': 'Typing Speed',
+  'reaction-time': 'Reaction Time',
+  'math-blitz': 'Math Blitz',
+  'color-rush': 'Color Rush',
+  'aim-master': 'Aim Master',
+  'stickman-fight': 'Stickman Fight',
+  'car-racer': 'Car Racer',
+  'bike-racer': 'Bike Racer'
+};
+
+const GAME_EMOJI = {
+  'rock-paper-scissors': '✊',
+  'tap-war': '👆',
+  'quick-quiz': '🧠',
+  'emoji-memory': '🧩',
+  'typing-speed': '⌨️',
+  'reaction-time': '⚡',
+  'math-blitz': '🔢',
+  'color-rush': '🎨',
+  'aim-master': '🎯',
+  'stickman-fight': '🧍',
+  'car-racer': '🏎',
+  'bike-racer': '🏍'
+};
+
+const GAME_TAGS = {
+  'rock-paper-scissors': 'Classic duel',
+  'tap-war': '5s frenzy',
+  'quick-quiz': 'Trivia race',
+  'emoji-memory': 'Brain teaser',
+  'typing-speed': 'WPM duel',
+  'reaction-time': 'Fastest wins',
+  'math-blitz': 'Beat the clock',
+  'color-rush': 'Mind twist',
+  'aim-master': 'Precision clicks',
+  'stickman-fight': 'Punch or kick',
+  'car-racer': 'Dodge the traffic',
+  'bike-racer': 'Balance & lean'
+};
+
 const FEATURES = [
   { icon: '🔒', text: 'Secure 6-digit code file sharing' },
   { icon: '📱', text: 'QR code for easy sharing' },
-  { icon: '🚀', text: 'Real-time transfer with rocket animation' },
-  { icon: '🎮', text: '6 fun mini-games while you wait' },
+  { icon: '🚀', text: 'Real-time transfer' },
+  { icon: '🎮', text: '12 mini-games while you wait' },
   { icon: '🤝', text: 'Best-of-3 multiplayer game flow' },
   { icon: '😜', text: 'Dare system for the winner' },
-  { icon: '🧹', text: 'Auto-cleanup after 1 hour' },
-  { icon: '🌙', text: 'Glassmorphism & animated illusion theme - NEW!' },
+  { icon: '🌙', text: 'Glassmorphism & animated theme' },
 ];
-
-// Add this mapping at the top of the file (after imports)
-const gameTypeMap = {
-  'rock-paper-scissors': 'rockPaperScissors',
-  'tap-war': 'tapWar',
-  'quick-quiz': 'quickQuiz',
-  'emoji-memory': 'emojiMemory',
-  'typing-speed': 'typingSpeed',
-  'reaction-time': 'reactionTime'
-};
-
-// Suppress noisy WebSocket warning from socket.io upgrade
-const originalConsoleError = console.error;
-console.error = function (...args) {
-  if (
-    typeof args[0] === 'string' &&
-    args[0].includes('WebSocket is closed before the connection is established')
-  ) {
-    // Suppress this specific warning
-    return;
-  }
-  originalConsoleError.apply(console, args);
-};
-
-const LAN_IP = "192.168.1.38"; // <-- Replace with your actual LAN IP
-const FRONTEND_PORT = "3002";  // <-- Replace with your frontend port if different
 
 function App() {
   const [view, setView] = useState('home');
@@ -50,90 +79,31 @@ function App() {
   const [dare, setDare] = useState('');
   const [fileInfo, setFileInfo] = useState(null);
   const [socket, setSocket] = useState(null);
-  const [playerType, setPlayerType] = useState('');
   const [dares, setDares] = useState({});
   const [round, setRound] = useState(1);
   const [scores, setScores] = useState({ player1: 0, player2: 0 });
   const [gameResult, setGameResult] = useState(null);
   const [gameWinner, setGameWinner] = useState(null);
   const [action, setAction] = useState('');
-  const [isUploading, setIsUploading] = useState(false);
-  const [isDownloading, setIsDownloading] = useState(false);
   const [error, setError] = useState('');
   const [receiverFileInfo, setReceiverFileInfo] = useState(null);
   const [receiverCode, setReceiverCode] = useState('');
   const [receiverDare, setReceiverDare] = useState('');
   const [receiverError, setReceiverError] = useState('');
   const [gameData, setGameData] = useState(null);
-  // Add state for dare categories and selected category for sender and receiver
   const [dareCategories, setDareCategories] = useState([]);
   const [selectedDareCategory, setSelectedDareCategory] = useState('');
-  const [receiverDareCategory, setReceiverDareCategory] = useState('');
   const [selectedGame, setSelectedGame] = useState('');
-  // Add state for waiting debug info
   const [waitingHint, setWaitingHint] = useState('');
-  // Add mobile detection
-  const [isMobile, setIsMobile] = useState(false);
-  const [showMobileInstructions, setShowMobileInstructions] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState('connecting');
-  // In your App component, add a state for the current game
   const [currentGame, setCurrentGame] = useState('');
-  // Add state for playerMap
-  const [playerMap, setPlayerMap] = useState({});
-  const [playerRole, setPlayerRole] = useState(null); // 'player1' or 'player2'
+  const [playerType, setPlayerType] = useState('');
+  const [playerRole, setPlayerRole] = useState(null);
 
-  // Add this effect after all useState declarations and before socket event handlers
+  /* ------------------------------------------------------------------ */
+  /*  socket connection                                                 */
+  /* ------------------------------------------------------------------ */
   useEffect(() => {
-    if (
-      socket &&
-      playerMap &&
-      socket.id &&
-      playerMap.player1 &&
-      playerMap.player2
-    ) {
-      if (socket.id === playerMap.player1 && playerRole !== 'player1') setPlayerRole('player1');
-      else if (socket.id === playerMap.player2 && playerRole !== 'player2') setPlayerRole('player2');
-    }
-  }, [socket, playerMap, playerRole]);
-
-  // Fetch dare categories on mount
-  useEffect(() => {
-    axios.get(`${BACKEND_URL}/dare-categories`).then(res => {
-      setDareCategories(res.data);
-    });
-  }, []);
-
-  // Handle URL parameters for direct receiver access
-  useEffect(() => {
-    const urlParams = new URLSearchParams(window.location.search);
-    const codeParam = urlParams.get('code');
-    const viewParam = urlParams.get('view');
-    
-    if (codeParam && viewParam === 'receiver') {
-      setReceiverCode(codeParam);
-      setView('receiver');
-      // Automatically fetch file info for the code
-      if (codeParam.length === 6) {
-        axios.get(`${BACKEND_URL}/fileinfo/${codeParam}`)
-          .then(res => {
-            setReceiverFileInfo(res.data);
-            setReceiverError('');
-            // Show success message for QR code access
-            setTimeout(() => {
-              alert('🎉 Welcome! File found and ready to download. Enter your dare to join the game!');
-            }, 500);
-          })
-          .catch(error => {
-            console.error('Error fetching file info:', error);
-            setReceiverError('No file found for this code. Please check the code and try again.');
-          });
-      }
-    }
-  }, []);
-
-  useEffect(() => {
-    console.log('🔌 Attempting to connect to backend:', BACKEND_URL);
-    
     const s = io(BACKEND_URL, {
       transports: ['websocket', 'polling'],
       timeout: 30000,
@@ -145,70 +115,27 @@ function App() {
       maxReconnectionAttempts: 10
     });
     setSocket(s);
-    
-    // Connection events with enhanced debugging
     s.on('connect', () => {
-      console.log('✅ Connected to backend from:', navigator.userAgent);
-      console.log('📱 Is mobile:', /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent));
-      console.log('🔗 Socket ID:', s.id);
-      console.log('🌐 Transport:', s.io.engine.transport.name);
       setConnectionStatus('connected');
       setError('');
     });
-    
-    s.on('connect_error', (error) => {
-      console.error('❌ Connection error:', error);
-      console.error('🔍 Error details:', {
-        message: error.message,
-        description: error.description,
-        context: error.context,
-        type: error.type
-      });
+    s.on('connect_error', (err) => {
       setConnectionStatus('error');
-      setError(`Connection failed: ${error.message}`);
+      setError('Connection failed: ' + err.message);
     });
-    
-    s.on('disconnect', (reason) => {
-      console.log('❌ Disconnected from backend:', reason);
-      setConnectionStatus('disconnected');
-    });
-    
-    s.on('reconnect', (attemptNumber) => {
-      console.log('🔄 Reconnected after', attemptNumber, 'attempts');
-      setConnectionStatus('connected');
-      setError('');
-    });
-    
-    s.on('reconnect_error', (error) => {
-      console.error('🔄 Reconnection error:', error);
-    });
-    
+    s.on('disconnect', () => setConnectionStatus('disconnected'));
+    s.on('reconnect', (n) => { setConnectionStatus('connected'); setError(''); });
+    s.on('reconnect_error', () => setConnectionStatus('error'));
     s.on('reconnect_failed', () => {
-      console.error('🔄 Reconnection failed after all attempts');
       setConnectionStatus('error');
       setError('Failed to reconnect to server');
     });
-    
-    s.on('playerJoined', ({ playerType, dare }) => {
-      console.log('Player joined:', playerType, dare);
-    });
-    
-    s.on('gameCreated', ({ roomCode, gameType }) => {
-      console.log('Game created:', { roomCode, gameType });
-    });
-    
-    s.on('gameJoined', ({ roomCode, gameType }) => {
-      console.log('Game joined:', { roomCode, gameType });
-    });
-    
-    s.on('error', (error) => {
-      console.error('Socket error:', error);
-      setError(error.message || 'Game error occurred');
-    });
-    
+    s.on('playerJoined', ({ playerType, dare }) => {});
+    s.on('gameCreated', ({ roomCode, gameType }) => {});
+    s.on('gameJoined', ({ roomCode, gameType }) => {});
+    s.on('error', (err) => setError(err.message || 'Game error occurred'));
     s.on('gameStart', ({ gameType, round, maxRounds, playerMap, gameData, dares }) => {
-      const mappedGame = gameTypeMap[gameType] || gameType;
-      setCurrentGame(mappedGame);
+      setCurrentGame(gameType);
       setDares(dares || {});
       setRound(round || 1);
       setView('game');
@@ -217,32 +144,25 @@ function App() {
       setGameResult(null);
       setGameWinner(null);
       setGameData(gameData);
-      // Update fileInfo with game suggestion
-      setFileInfo(prev => prev ? { ...prev, gameSuggestion: { game: mappedGame } } : { gameSuggestion: { game: mappedGame } });
-      console.log('Game started:', mappedGame, gameData); // Debug log
+      setFileInfo(prev => prev ? { ...prev, gameSuggestion: { game: gameType } } : { gameSuggestion: { game: gameType } });
     });
     s.on('roundResult', ({ result, scores, round, playerMap }) => {
-      if (!result || !scores || !round) {
-        console.error('Invalid roundResult payload:', { result, scores, round, playerMap });
-        setGameResult(null);
-        return;
-      }
+      if (!result || !scores || !round) { setGameResult(null); return; }
       setGameResult(result);
       setScores(scores);
       setRound(round);
       setPlayerMap(playerMap);
     });
     s.on('gameEnd', ({ winner, finalScores, scores, dares }) => {
-      console.log('Game end received:', { winner, finalScores, scores, dares });
       setGameWinner({ winner, finalScores, scores, dares });
       setView('end');
     });
     s.on('nextRound', ({ round, gameData }) => {
       setRound(round);
       setGameData(gameData);
-      setAction(''); // Clear the input for new round
+      setAction('');
       setGameResult(null);
-      console.log(`Starting round ${round} with new game data`);
+      setGameResult(null);
     });
     return () => s.disconnect();
   }, []);
@@ -250,970 +170,637 @@ function App() {
   useEffect(() => {
     if (view === 'waiting') {
       setWaitingHint('');
-      const timer = setTimeout(() => {
+      const t = setTimeout(() => {
         setWaitingHint('Still waiting? Make sure both players joined with the same code and entered a dare.');
       }, 7000);
-      
-      // Add mobile-specific hints
-      const mobileTimer = setTimeout(() => {
-        if (/Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)) {
-          setWaitingHint('📱 Mobile user detected! Make sure the desktop user has also joined the game with the same code.');
-        }
-      }, 3000);
-      
-      return () => {
-        clearTimeout(timer);
-        clearTimeout(mobileTimer);
-      };
+      return () => clearTimeout(t);
     }
   }, [view]);
 
-  // Place confetti useEffect here, before any return or conditional
   useEffect(() => {
-    // Only trigger confetti when game ends and player wins
     if (view === 'end' && gameWinner && gameWinner.winner === playerType && gameWinner.winner !== 'tie') {
-      confetti({ particleCount: 120, spread: 90, origin: { y: 0.6 } });
+      confetti({ particleCount: 140, spread: 90, origin: { y: 0.6 }, colors: ['#f43f5e', '#fbbf24', '#3b82f6', '#10b981'] });
     }
   }, [view, gameWinner, playerType]);
 
+  /* ------------------------------------------------------------------ */
+  /*  file actions                                                    */
+  /* ------------------------------------------------------------------ */
   const handleUpload = async () => {
+    if (!file) return;
     setIsUploading(true);
+    setUploadProgress(0);
+    setError('');
     const form = new FormData();
     form.append('file', file);
-    const res = await axios.post(`${BACKEND_URL}/upload`, form);
-    setCode(res.data.code);
-    setFileInfo({ fileName: res.data.fileName, mimetype: res.data.mimetype });
-    setView('sender');
-    setIsUploading(false);
+    try {
+      const res = await axios.post(`${BACKEND_URL}/upload`, form, {
+        onUploadProgress: (e) => { if (e.total) setUploadProgress(Math.round((e.loaded / e.total) * 100)); }
+      });
+      setCode(res.data.code);
+      setFileInfo({ fileName: res.data.fileName, mimetype: res.data.mimetype, size: res.data.size });
+      setView('sender');
+    } catch (err) {
+      setError(err.response?.data?.error || (err.code === 'ERR_NETWORK' ? 'Upload failed — is the server running?' : 'Upload failed. Please try again.'));
+    } finally {
+      setIsUploading(false);
+      setUploadProgress(0);
+    }
   };
 
   const handleJoinAsSender = () => {
-    console.log('Joining as sender:', { code, dare, selectedGame });
     socket.emit('joinRoom', { code, playerType: 'sender', dare, selectedGame });
     setPlayerType('sender');
     setView('waiting');
   };
 
-  const handleJoinAsReceiver = async (receiverCode, receiverDare) => {
+  const handleJoinAsReceiver = async (rc, rd) => {
     try {
-      console.log('Joining as receiver:', { receiverCode, receiverDare });
-      const res = await axios.get(`${BACKEND_URL}/fileinfo/${receiverCode}`);
+      const res = await axios.get(`${BACKEND_URL}/fileinfo/${rc}`);
       setFileInfo(res.data);
-      socket.emit('joinRoom', { code: receiverCode, playerType: 'receiver', dare: receiverDare });
-      setPlayerType('receiver'); // <-- ensure this is always called
+      socket.emit('joinRoom', { code: rc, playerType: 'receiver', dare: rd });
+      setPlayerType('receiver');
       setView('waiting');
-    } catch (error) {
-      console.error('Error joining as receiver:', error);
+    } catch (err) {
       setError('The sender has not started the game yet. Please wait for the sender to join first.');
     }
   };
 
-  const handleAction = (move) => {
-    setAction(move);
-    socket.emit('gameAction', { action: move, value: move });
-  };
+  /* ------------------------------------------------------------------ */
+  /*  home: header + feature list + game picker                        */
+  /* ------------------------------------------------------------------ */
+  const HomeView = () => (
+    <div className="home">
+      <div className="home-brand">
+        <h1>
+          Share<span className="highlight">N</span>Play
+        </h1>
+        <p>Secure file sharing with <b>12 real-time mini-games</b></p>
+      </div>
+      <p className="home-intro">
+        Send any file with a 6-digit code &amp; play a head-to-head mini-game
+        while you wait. The winner gets a dare. Works on every device — desktop,
+        phone, tablet — in light or dark mode.
+      </p>
 
-  const downloadFile = async () => {
-    setIsDownloading(true);
-    const res = await axios.get(`${BACKEND_URL}/download/${code}`, { responseType: 'blob' });
-    const blob = new Blob([res.data], { type: fileInfo.mimetype });
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = fileInfo.fileName;
-    a.click();
-    setIsDownloading(false);
-  };
-
-  // New: fetch file info for receiver
-  const handleReceiverCodeChange = async (e) => {
-    const val = e.target.value;
-    setReceiverCode(val);
-    setReceiverFileInfo(null);
-    setReceiverError('');
-    if (val.length === 6) {
-      try {
-        const res = await axios.get(`${BACKEND_URL}/fileinfo/${val}`);
-        setReceiverFileInfo(res.data);
-        setReceiverError(''); // Clear any previous errors
-      } catch (error) {
-        console.error('Error fetching file info:', error);
-        setReceiverError('No file found for this code. Please check the code and try again.');
-      }
-    }
-  };
-
-  // Helper to get local IP for QR code
-  const getLocalIp = () => {
-    // Replace this with your actual local IP or fetch dynamically if needed
-    return '192.168.1.38'; // <-- change this to your computer's IP if needed
-  };
-
-  // Enhanced QR code generation with mobile instructions
-  const generateQRCode = () => {
-    if (!code) return null;
-    const port = window.location.port || '3000';
-    const ip = getLocalIp();
-    const baseUrl = `http://${ip}:${port}`;
-    const mobileAppUrl = `${baseUrl}/mobile-app.html?code=${code}&view=receiver`;
-    const receiverUrl = `${baseUrl}/receiver?code=${code}`;
-    
-    return (
-      <div className="qr-section">
-        <h3>📱 Mobile App QR Code</h3>
-        <div className="qr-container">
-          <QRCodeSVG value={mobileAppUrl} size={200} />
-        </div>
-        <div className="mobile-instructions">
-          <p><strong>📱 Scan to install mobile app!</strong></p>
-          <p>• Opens mobile app download page</p>
-          <p>• Install as PWA for app-like experience</p>
-          <p>• All games and features included</p>
-        </div>
-        <button 
-          className="copy-btn"
-          onClick={() => {
-            navigator.clipboard.writeText(mobileAppUrl);
-            alert('Mobile app link copied to clipboard!');
-          }}
-        >
-          📋 Copy Mobile App Link
+      <div className="hero-cta">
+        <button className="btn btn-primary btn-lg" onClick={() => setView('sender')}>
+          <span className="icon">📤</span> Send File
         </button>
-        
-        {isMobile && (
-          <div className="mobile-tip">
-            <p>💡 <strong>You're on mobile!</strong> Share this QR code with a friend to play together.</p>
-          </div>
-        )}
+        <button className="btn btn-secondary btn-lg" onClick={() => setView('receiver')}>
+          <span className="icon">📥</span> Receive File
+        </button>
       </div>
-    );
-  };
 
-  // HOMEPAGE: beautiful glass, illusion bg, features 2-column, centered
-  if (view === 'home') return (
-    <div style={{minHeight:'100vh',display:'flex',flexDirection:'column',justifyContent:'center',alignItems:'center'}}>
-      <div className="glass home-glass">
-        <h1 className="home-title">ShareNPlay</h1>
-        <p className="home-subtitle">Secure file sharing with fun mini-games</p>
-        <div className="home-btn-group">
-          <button 
-            onClick={() => setView('sender')}
-            className="home-btn send-btn"
-          >
-            📤 Send File
-          </button>
-          <button 
-            onClick={() => setView('receiver')}
-            className="home-btn receive-btn"
-          >
-            📥 Receive File
-          </button>
-        </div>
-        <div className="home-info">
-          <p>Share files securely with a 6-digit code</p>
-          <p>Play mini-games while waiting • Winner gets a dare!</p>
-          <p className="home-mobile-note">
-            <b>Works on mobile and desktop!</b><br/>
-            You can <b>send</b> or <b>receive</b> files from any device.
-          </p>
-        </div>
-        <div className="home-features">
-          <ul className="features-list">
-            {FEATURES.map((f,i) => (
-              <li key={i}>
-                <span className="animated-icon">{f.icon}</span> <span>{f.text}</span>
-              </li>
-            ))}
-          </ul>
+      <div className="features-grid">
+        {FEATURES.map((f, i) => (
+          <div key={i} className="feature">
+            <div className="icon">{f.icon}</div>
+            <div className="text">{f.text}</div>
+          </div>
+        ))}
+      </div>
+
+      <div className="game-picker-wrap">
+        <div className="game-picker-label">🎮 What game will you play?</div>
+        <div className="game-picker">
+          {GAME_IDS.map(g => (
+            <button
+              key={g}
+              className={`game-pill ${selectedGame === g ? 'active' : ''}`}
+              onClick={() => setSelectedGame(selectedGame === g ? '' : g)}
+              type="button"
+            >
+              <span className="emoji">{GAME_EMOJI[g]}</span>
+              {GAME_NAMES[g]}
+            </button>
+          ))}
         </div>
       </div>
-      {error && <div style={{color:'#e74c3c'}}>{error}</div>}
     </div>
   );
-  if (view === 'sender') return (
-    <div style={{minHeight:'100vh',display:'flex',flexDirection:'column',justifyContent:'center',alignItems:'center'}}>
-      <div className="glass" style={{maxWidth:'500px',width:'100%',padding:'2em'}}>
-        <h2 style={{textAlign:'center',marginBottom:'1.5em',color:'#333'}}>📤 Send File</h2>
-        
-        {!code ? (
-          <div style={{textAlign:'center'}}>
-            <div style={{marginBottom:'1.5em'}}>
-              <input 
-                type="file" 
-                onChange={e => setFile(e.target.files[0])}
-                style={{
-                  display: 'none'
-                }}
-                id="fileInput"
-              />
-              <label 
-                htmlFor="fileInput"
-                style={{
-                  display: 'inline-block',
-                  padding: '1em 2em',
-                  backgroundColor: '#f8f9fa',
-                  border: '2px dashed #dee2e6',
-                  borderRadius: '8px',
-                  cursor: 'pointer',
-                  fontSize: '1.1em',
-                  color: '#6c757d'
-                }}
-              >
-                {file ? `📎 ${file.name}` : '📁 Choose File'}
-              </label>
-            </div>
-            
-            <button 
-              onClick={handleUpload} 
-              disabled={!file || isUploading}
-              style={{
-                padding: '0.8em 2em',
-                fontSize: '1.1em',
-                backgroundColor: '#007bff',
-                color: 'white',
-                border: 'none',
-                borderRadius: '8px',
-                cursor: !file || isUploading ? 'not-allowed' : 'pointer',
-                opacity: !file || isUploading ? 0.6 : 1
-              }}
-            >
-              {isUploading ? '⏳ Generating Code...' : '🚀 Send & Generate Code'}
-            </button>
-          </div>
-        ) : (
-          <div style={{textAlign:'center'}}>
-            <div style={{marginBottom:'2em'}}>
-              <h3 style={{color:'#28a745',marginBottom:'0.5em'}}>✅ File Uploaded!</h3>
-              <div className="code-display" style={{fontSize:'2em',fontWeight:'bold',color:'#007bff',marginBottom:'0.5em'}}>{code}</div>
-              <p style={{color:'#6c757d',marginBottom:'1em'}}>Share this code with the receiver</p>
-              <div className="qr-container">
-                <QRCodeSVG 
-                  value={`http://${LAN_IP}:${FRONTEND_PORT}${window.location.pathname}?code=${code}&view=receiver`} 
-                  size={120} 
-                  style={{margin:'0 auto'}} 
+
+  /* ------------------------------------------------------------------ */
+  /*  SENDER VIEW                                                       */
+  /* ------------------------------------------------------------------ */
+  const SenderView = () => (
+    <div className="sender">
+      <div className="card">
+        <div className="card-header">
+          <h3>📤 Send File</h3>
+          <button
+            className="close-btn"
+            onClick={() => { setView('home'); setFile(null); setCode(''); setDare(''); }}
+          >
+            ✕
+          </button>
+        </div>
+        <div className="card-body">
+          {!code ? (
+            <div className="sender-form">
+              <div className="drop-zone" onClick={() => document.getElementById('fileInput').click()}>
+                <div className="icon-big">📁</div>
+                <h4>Drag & drop or click to browse</h4>
+                <p>Up to 200 MB · any file type</p>
+                <input
+                  id="fileInput"
+                  type="file"
+                  style={{ display: 'none' }}
+                  onChange={e => setFile(e.target.files[0])}
                 />
               </div>
-              <p style={{color:'#28a745',fontSize:'0.9em',marginTop:'0.5em',fontStyle:'italic'}}>
-                📱 Scan this QR code to open receiver page directly!
-              </p>
-              <button 
-                onClick={() => {
-                  const directLink = `http://${LAN_IP}:${FRONTEND_PORT}${window.location.pathname}?code=${code}&view=receiver`;
-                  navigator.clipboard.writeText(directLink);
-                  alert('Direct link copied to clipboard!');
-                }}
-                style={{
-                  padding: '0.5em 1em',
-                  fontSize: '0.9em',
-                  backgroundColor: '#17a2b8',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '4px',
-                  cursor: 'pointer',
-                  marginTop: '0.5em'
-                }}
+
+              {file && (
+                <div className="file-chip">
+                  <span className="icon">📎</span>
+                  <span className="name">{file.name}</span>
+                  <span className="size">{file.size < 1024 * 1024 ? (file.size / 1024).toFixed(1) + ' KB' : (file.size / (1024 * 1024)).toFixed(2) + ' MB'}</span>
+                </div>
+              )}
+
+              {isUploading && (
+                <div className="progress-wrap">
+                  <div className="progress-bar">
+                    <div
+                      className="progress-fill"
+                      style={{ width: uploadProgress + '%' }}
+                    />
+                  </div>
+                  <p style={{ fontSize: '0.8rem', color: 'var(--ink-tertiary)' }}>
+                    {uploadProgress < 100 ? `Uploading… ${uploadProgress}%` : 'Processing…'}
+                  </p>
+                </div>
+              )}
+
+              <button
+                className="btn btn-primary btn-lg join-btn"
+                onClick={handleUpload}
+                disabled={!file}
               >
-                📋 Copy Direct Link
+                {isUploading ? '⏳ Uploading…' : '🚀 Generate Code'}
               </button>
-              
-              {/* Mobile App Download Section */}
-              <div style={{
-                marginTop: '2em',
-                padding: '1.5em',
-                backgroundColor: '#f8f9fa',
-                borderRadius: '8px',
-                border: '1px solid #dee2e6'
-              }}>
-                <h4 style={{textAlign: 'center', marginBottom: '1em', color: '#333'}}>📱 Mobile App Access</h4>
-                <div style={{display: 'flex', flexDirection: 'column', gap: '1em'}}>
-                  <div style={{textAlign: 'center'}}>
-                    <p style={{fontSize: '0.9em', color: '#666', marginBottom: '0.5em'}}>
-                      <strong>🎮 Play in Browser:</strong> Scan QR code above - no download needed!
-                    </p>
-                  </div>
-                  <div style={{textAlign: 'center'}}>
-                    <button 
-                      onClick={() => {
-                        if ('serviceWorker' in navigator) {
-                          navigator.serviceWorker.register('/service-worker.js');
-                          alert('PWA installation available! Look for "Add to Home Screen" in your browser menu.');
-                        } else {
-                          alert('PWA not supported in this browser. Use the QR code to play in browser!');
-                        }
-                      }}
-                      style={{
-                        padding: '0.5em 1em',
-                        fontSize: '0.9em',
-                        backgroundColor: '#28a745',
-                        color: 'white',
-                        border: 'none',
-                        borderRadius: '4px',
-                        cursor: 'pointer',
-                        marginRight: '0.5em'
-                      }}
-                    >
-                      📱 Install PWA
-                    </button>
-                    <a 
-                      href="https://github.com/Rajketha/ShareNPlay/archive/refs/heads/main.zip"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      style={{
-                        padding: '0.5em 1em',
-                        fontSize: '0.9em',
-                        backgroundColor: '#6c757d',
-                        color: 'white',
-                        border: 'none',
-                        borderRadius: '4px',
-                        cursor: 'pointer',
-                        textDecoration: 'none',
-                        display: 'inline-block'
-                      }}
-                    >
-                      💻 Download Desktop
-                    </a>
-                  </div>
+              {error && <p className="error-banner" style={{ color: 'var(--danger)', fontSize: '0.9rem', margin: 0 }}>⚠️ {error}</p>}
+            </div>
+          ) : (
+            <div className="sender-form">
+              <div className="file-info-card">
+                <div className="icon">✅</div>
+                <div className="name">{fileInfo.fileName}</div>
+                <div className="meta">
+                  {fileInfo.size ? `${(fileInfo.size / (1024 * 1024)).toFixed(2)} MB` : ''} · {fileInfo.mimetype}
                 </div>
               </div>
-            </div>
-            
-            <div style={{marginBottom:'1.5em'}}>
-              <select 
-                value={selectedDareCategory} 
-                onChange={e => setSelectedDareCategory(e.target.value)}
-                style={{
-                  padding: '0.5em',
-                  fontSize: '1em',
-                  borderRadius: '4px',
-                  border: '1px solid #ced4da',
-                  marginRight: '0.5em',
-                  minWidth: '150px'
-                }}
+
+              <div className="code-display">{code}</div>
+              <p style={{ color: 'var(--ink-secondary)', fontSize: '0.9rem' }}>Share this code with the receiver</p>
+
+              <div className="qr-wrap">
+                <QRCodeSVG value={`${BACKEND_URL.split('://')[0]}://${window.location.hostname}:${FRONTEND_PORT}/?code=${code}&view=receiver`} size={200} />
+              </div>
+
+              <div className="dare-controls">
+                <div className="row">
+                  <select
+                    className="select"
+                    value={selectedDareCategory}
+                    onChange={e => setSelectedDareCategory(e.target.value)}
+                  >
+                    <option value="">🎯 Dare category</option>
+                    {dareCategories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                  </select>
+                  <button
+                    className="btn btn-success"
+                    onClick={async () => {
+                      if (!selectedDareCategory) return;
+                      const res = await axios.get(`${BACKEND_URL}/random-dare/${selectedDareCategory}`);
+                      setDare(res.data.dare);
+                    }}
+                    disabled={!selectedDareCategory}
+                  >
+                    🎲 Get Dare
+                  </button>
+                </div>
+                <input
+                  className="input"
+                  placeholder="💬 Your dare (or get one randomly)"
+                  value={dare}
+                  onChange={e => setDare(e.target.value)}
+                />
+                <div className="game-picker-grid">
+                  {GAME_IDS.map(g => (
+                    <div
+                      key={g}
+                      className={`game-pill-wrap ${selectedGame === g ? 'active' : ''}`}
+                      onClick={() => setSelectedGame(selectedGame === g ? '' : g)}
+                    >
+                      <div className="emoji">{GAME_EMOJI[g]}</div>
+                      <div className="name">{GAME_NAMES[g]}</div>
+                      <div className="tag">{GAME_TAGS[g]}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <button
+                className="btn btn-primary btn-lg join-btn"
+                onClick={handleJoinAsSender}
+                disabled={!dare}
               >
-                <option value="">🎯 Select Dare Category</option>
-                {dareCategories.map(cat => <option key={cat.id} value={cat.id}>{cat.name}</option>)}
-              </select>
-              <button 
-                disabled={!selectedDareCategory} 
-                onClick={async()=>{
-                  const res = await axios.get(`${BACKEND_URL}/random-dare/${selectedDareCategory}`);
-                  setDare(res.data.dare);
-                }}
-                style={{
-                  padding: '0.5em 1em',
-                  fontSize: '1em',
-                  backgroundColor: '#28a745',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '4px',
-                  cursor: !selectedDareCategory ? 'not-allowed' : 'pointer',
-                  opacity: !selectedDareCategory ? 0.6 : 1
-                }}
-              >
-                🎲 Get Dare
-              </button>
-            </div>
-            
-            <input 
-              placeholder="💬 Your dare (or get one randomly)" 
-              value={dare} 
-              onChange={e => setDare(e.target.value)}
-              style={{
-                width: '100%',
-                padding: '0.8em',
-                fontSize: '1em',
-                borderRadius: '4px',
-                border: '1px solid #ced4da',
-                marginBottom: '1.5em',
-                boxSizing: 'border-box'
-              }}
-            />
-            
-            <div style={{marginBottom:'1.5em'}}>
-              <select 
-                value={selectedGame} 
-                onChange={e => setSelectedGame(e.target.value)}
-                style={{
-                  padding: '0.5em',
-                  fontSize: '1em',
-                  borderRadius: '4px',
-                  border: '1px solid #ced4da',
-                  minWidth: '200px'
-                }}
-              >
-                <option value="">🎮 Auto-select game</option>
-                <option value="rockPaperScissors">✂️ Rock Paper Scissors</option>
-                <option value="tapWar">👆 Tap War</option>
-                <option value="quickQuiz">🧠 Quick Quiz</option>
-                <option value="emojiMemory">😊 Emoji Memory</option>
-                <option value="typingSpeed">⌨️ Typing Speed</option>
-                <option value="reactionTime">⚡ Reaction Time</option>
-              </select>
-            </div>
-            
-            <button 
-              onClick={handleJoinAsSender} 
-              disabled={!dare}
-              style={{
-                padding: '0.8em 2em',
-                fontSize: '1.1em',
-                backgroundColor: '#dc3545',
-                color: 'white',
-                border: 'none',
-                borderRadius: '8px',
-                cursor: !dare ? 'not-allowed' : 'pointer',
-                opacity: !dare ? 0.6 : 1,
-                marginBottom: '1em'
-              }}
-            >
-              🎮 Join Game
-            </button>
-          </div>
-        )}
-        
-        <button 
-          onClick={()=>{setView('home');setFile(null);setCode('');setDare('');}}
-          style={{
-            padding: '0.5em 1em',
-            fontSize: '0.9em',
-            backgroundColor: 'transparent',
-            color: '#6c757d',
-            border: '1px solid #6c757d',
-            borderRadius: '4px',
-            cursor: 'pointer'
-          }}
-        >
-          ← Back to Home
-        </button>
-      </div>
-    </div>
-  );
-  if (view === 'receiver') return (
-    <div style={{minHeight:'100vh',display:'flex',flexDirection:'column',justifyContent:'center',alignItems:'center'}}>
-      <div className="glass" style={{maxWidth:'500px',width:'100%',padding:'2em'}}>
-        <h2 style={{textAlign:'center',marginBottom:'1.5em',color:'#333'}}>📥 Receive File</h2>
-        
-        <div style={{textAlign:'center'}}>
-          <div style={{marginBottom:'2em'}}>
-            <input 
-              placeholder="🔢 Enter 6-digit code" 
-              value={receiverCode} 
-              onChange={handleReceiverCodeChange} 
-              maxLength={6}
-              style={{
-                width: '100%',
-                padding: '1em',
-                fontSize: '1.2em',
-                textAlign: 'center',
-                borderRadius: '8px',
-                border: '2px solid #dee2e6',
-                boxSizing: 'border-box',
-                letterSpacing: '0.2em',
-                fontWeight: 'bold'
-              }}
-            />
-          </div>
-          
-          {receiverFileInfo && (
-            <div style={{
-              marginBottom:'2em',
-              padding: '1em',
-              backgroundColor: '#f8f9fa',
-              borderRadius: '8px',
-              border: '1px solid #dee2e6'
-            }}>
-              <h3 style={{color:'#28a745',marginBottom:'0.5em'}}>📎 File Found!</h3>
-              <p style={{fontSize:'1.1em',color:'#333',marginBottom:'1em'}}>
-                <strong>{receiverFileInfo.fileName}</strong>
-              </p>
-              <button 
-                onClick={async()=>{
-                  const res = await axios.get(`${BACKEND_URL}/download/${receiverCode}`, { responseType: 'blob' });
-                  const blob = new Blob([res.data], { type: receiverFileInfo.mimetype });
-                  const url = window.URL.createObjectURL(blob);
-                  const a = document.createElement('a');
-                  a.href = url;
-                  a.download = receiverFileInfo.fileName;
-                  a.click();
-                }}
-                style={{
-                  padding: '0.8em 2em',
-                  fontSize: '1.1em',
-                  backgroundColor: '#28a745',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '8px',
-                  cursor: 'pointer'
-                }}
-              >
-                💾 Download File
+                🎮 Join Game
               </button>
             </div>
           )}
-          
-          {receiverFileInfo && (
-            <>
-              <div style={{marginBottom:'1.5em'}}>
-                <select 
-                  value={receiverDareCategory} 
-                  onChange={e => setReceiverDareCategory(e.target.value)}
-                  style={{
-                    padding: '0.5em',
-                    fontSize: '1em',
-                    borderRadius: '4px',
-                    border: '1px solid #ced4da',
-                    marginRight: '0.5em',
-                    minWidth: '150px'
+        </div>
+      </div>
+    </div>
+  );
+
+  /* ------------------------------------------------------------------ */
+  /*  RECEIVER VIEW                                                     */
+  /* ------------------------------------------------------------------ */
+  const ReceiverView = () => (
+    <div className="receiver">
+      <div className="card">
+        <div className="card-header">
+          <h3>📥 Receive File</h3>
+          <button
+            className="close-btn"
+            onClick={() => { setView('home'); setReceiverCode(''); setReceiverDare(''); setReceiverFileInfo(null); }}
+          >
+            ✕
+          </button>
+        </div>
+        <div className="card-body">
+          <div className="receiver-form">
+            <div className="code-input-wrap">
+              <input
+                className="input"
+                placeholder="🔢 Enter the 6-digit code"
+                value={receiverCode}
+                maxLength={6}
+                onChange={e => setReceiverCode(e.target.value.toUpperCase())}
+              />
+              <button
+                className="copy-btn"
+                onClick={() => {
+                  if (receiverCode) {
+                    navigator.clipboard.writeText(receiverCode);
+                    alert('Code copied!');
+                  }
+                }}
+                style={{ display: receiverCode ? 'block' : 'none' }}
+              >
+                📋
+              </button>
+            </div>
+
+            {receiverFileInfo && (
+              <div className="file-info-card">
+                <div className="icon">📎</div>
+                <div className="name">{receiverFileInfo.fileName}</div>
+                <div className="meta">
+                  {receiverFileInfo.size ? `${(receiverFileInfo.size / (1024 * 1024)).toFixed(2)} MB` : ''} · {receiverFileInfo.mimetype}
+                </div>
+                <button
+                  className="btn btn-success btn-sm"
+                  style={{ marginTop: '10px' }}
+                  onClick={async () => {
+                    const res = await axios.get(`${BACKEND_URL}/download/${receiverCode}`, { responseType: 'blob' });
+                    const blob = new Blob([res.data], { type: receiverFileInfo.mimetype });
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url; a.download = receiverFileInfo.fileName;
+                    a.click();
                   }}
                 >
-                  <option value="">🎯 Select Dare Category</option>
-                  {dareCategories.map(cat => <option key={cat.id} value={cat.id}>{cat.name}</option>)}
+                  💾 Download
+                </button>
+              </div>
+            )}
+
+            <div className="dare-controls">
+              <div className="row">
+                <select
+                  className="select"
+                  value={receiverDareCategory}
+                  onChange={e => setSelectedDareCategory(e.target.value)}
+                >
+                  <option value="">🎯 Dare category</option>
+                  {dareCategories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                 </select>
-                <button 
-                  disabled={!receiverDareCategory} 
-                  onClick={async()=>{
+                <button
+                  className="btn btn-success btn-sm"
+                  onClick={async () => {
+                    if (!receiverDareCategory) return;
                     const res = await axios.get(`${BACKEND_URL}/random-dare/${receiverDareCategory}`);
                     setReceiverDare(res.data.dare);
                   }}
-                  style={{
-                    padding: '0.5em 1em',
-                    fontSize: '1em',
-                    backgroundColor: '#28a745',
-                    color: 'white',
-                    border: 'none',
-                    borderRadius: '4px',
-                    cursor: !receiverDareCategory ? 'not-allowed' : 'pointer',
-                    opacity: !receiverDareCategory ? 0.6 : 1
-                  }}
+                  disabled={!receiverDareCategory}
                 >
                   🎲 Get Dare
                 </button>
               </div>
-              
-              <input 
-                placeholder="💬 Your dare (or get one randomly)" 
-                value={receiverDare} 
+              <input
+                className="input"
+                placeholder="💬 Your dare (or get one randomly)"
+                value={receiverDare}
                 onChange={e => setReceiverDare(e.target.value)}
-                style={{
-                  width: '100%',
-                  padding: '0.8em',
-                  fontSize: '1em',
-                  borderRadius: '4px',
-                  border: '1px solid #ced4da',
-                  marginBottom: '1.5em',
-                  boxSizing: 'border-box'
-                }}
               />
-              
-              <button 
-                onClick={async()=>{
+              <button
+                className="btn btn-primary btn-lg join-btn"
+                onClick={async () => {
+                  if (!receiverCode || !receiverDare) return;
                   setCode(receiverCode);
                   setDare(receiverDare);
                   await handleJoinAsReceiver(receiverCode, receiverDare);
-                }} 
-                disabled={!receiverCode || !receiverDare} 
-                style={{
-                  padding: '0.8em 2em',
-                  fontSize: '1.1em',
-                  backgroundColor: '#dc3545',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '8px',
-                  cursor: !receiverCode || !receiverDare ? 'not-allowed' : 'pointer',
-                  opacity: !receiverCode || !receiverDare ? 0.6 : 1,
-                  marginBottom: '1em'
                 }}
+                disabled={!receiverCode || !receiverDare}
               >
                 🎮 Join Game
               </button>
-            </>
-          )}
-          
-          {receiverError && (
-            <div style={{
-              color:'#dc3545',
-              backgroundColor: '#f8d7da',
-              border: '1px solid #f5c6cb',
-              borderRadius: '4px',
-              padding: '0.8em',
-              marginBottom: '1em'
-            }}>
-              ⚠️ {receiverError}
+              {receiverError && <p style={{ color: 'var(--danger)', fontSize: '0.9rem' }}>⚠️ {receiverError}</p>}
             </div>
-          )}
+          </div>
         </div>
-        
-        <button 
-          onClick={()=>{setView('home');setReceiverCode('');setReceiverDare('');setReceiverFileInfo(null);}}
-          style={{
-            padding: '0.5em 1em',
-            fontSize: '0.9em',
-            backgroundColor: 'transparent',
-            color: '#6c757d',
-            border: '1px solid #6c757d',
-            borderRadius: '4px',
-            cursor: 'pointer'
-          }}
-        >
-          ← Back to Home
+      </div>
+    </div>
+  );
+
+  /* ------------------------------------------------------------------ */
+  /*  WAITING VIEW                                                      */
+  /* ------------------------------------------------------------------ */
+  const WaitingView = () => (
+    <div className="waiting">
+      <div className="logo-big">🎮</div>
+      <h2>Joining game…</h2>
+      <div className="status-pill">
+        <span className="dot" />
+        {connectionStatus === 'connected' ? 'Connected' :
+         connectionStatus === 'error' ? 'Connection Error' :
+         connectionStatus === 'disconnected' ? 'Disconnected' : 'Connecting…'}
+      </div>
+      <div><b>Role:</b> {playerType} · <b>Code:</b> {code}</div>
+      <div><b>Your dare:</b> {dare}</div>
+      {waitingHint && <div style={{ color: 'var(--amber-600)', fontSize: '0.9rem' }}>{waitingHint}</div>}
+      <div style={{ color: 'var(--ink-tertiary)', fontSize: '0.85rem' }}>
+        Make sure both players joined with the same code.
+      </div>
+      {/Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) && (
+        <div style={{ color: 'var(--brand-600)', fontSize: '0.9rem' }}>
+          📱 Mobile detected — make sure the desktop user has joined too.
+        </div>
+      )}
+    </div>
+  );
+
+  /* ------------------------------------------------------------------ */
+  /*  GAME VIEW                                                         */
+  /* ------------------------------------------------------------------ */
+  const GameView = () => (
+    <div className="game-view">
+      <div className="scoreboard">
+        <div className={`score-side ${playerRole === 'player1' ? 'you' : ''}`}>
+          <div className="label">You</div>
+          <div className="value">{playerRole === 'player2' ? scores.player2 : scores.player1}</div>
+        </div>
+        <div className="score-center">
+          <div className="round-badge">Round {round} / 3</div>
+          <div className="score-vs">VS</div>
+        </div>
+        <div className={`score-side ${playerRole === 'player2' ? 'you' : ''}`}>
+          <div className="label">Opponent</div>
+          <div className="value">{playerRole === 'player2' ? scores.player1 : scores.player2}</div>
+        </div>
+      </div>
+
+      <div style={{ maxWidth: '720px', margin: '0 auto' }}>
+        {gameResult && playerRole && (
+          <div className={`round-result ${gameResult.winner === playerRole ? 'win' : gameResult.winner === 'tie' ? 'tie' : 'lose'}`}>
+            {gameResult.winner === 'tie' ? '🤝 Tie!' :
+             gameResult.winner === playerRole ? '🏆 You win this round!' : '😞 Opponent wins this round.'}
+            <div style={{ fontSize: '0.85rem', color: 'var(--ink-secondary)', marginTop: 4 }}>
+              Scores: P1 {scores.player1} — P2 {scores.player2}
+            </div>
+          </div>
+        )}
+
+        {/* 12-game render blocks ---------------------------------------------------- */}
+        {currentGame === 'rock-paper-scissors' && (
+          <div className="game-card">
+            <div className="game-title-row"><span className="icon">✊</span><h3>Rock Paper Scissors</h3><span className="tag">Best of 3</span></div>
+            {gameResult && (
+              <div style={{ padding: '10px 14px', borderRadius: 10, background: 'var(--bg-surface-2)', marginBottom: 12 }}>
+                <p style={{ fontSize: '0.9rem' }}>
+                  You: {playerType === 'sender' ? gameResult.player1?.choice : gameResult.player2?.choice} · Opponent: {playerType === 'sender' ? gameResult.player2?.choice : gameResult.player1?.choice} · Winner: {gameResult.winner === 'tie' ? 'Tie' : (gameResult.winner === playerRole ? 'You' : 'Opponent')}
+                </p>
+              </div>
+            )}
+            <div className="game-controls" style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', justifyContent: 'center' }}>
+              {['rock','paper','scissors'].map(c => (
+                <button key={c} className="btn btn-primary" onClick={() => {
+                  if (action) return;
+                  socket.emit('gameAction', { action: c, value: c });
+                  setAction(c);
+                }} disabled={!!action}>
+                  {c === 'rock' ? '🪨' : c === 'paper' ? '📄' : '✂️'}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {currentGame === 'tap-war' && (
+          <TapWarGame onResult={handleAction} round={round} socket={socket} code={code} />
+        )}
+
+        {currentGame === 'quick-quiz' && (
+          <div className="game-card">
+            <div className="game-title-row"><span className="icon">🧠</span><h3>Quick Quiz</h3><span className="tag">Round {round}</span></div>
+            {gameData && <div style={{ padding: '12px', borderRadius: 10, background: 'var(--bg-surface-2)' }}><p style={{ fontWeight: 700 }}>{gameData.question}</p></div>}
+            <div className="input-group" style={{ marginBottom: 12 }}>
+              <input className="input" placeholder="Type your answer…" value={action} onChange={e => setAction(e.target.value)} onKeyPress={e => e.key === 'Enter' && handleAction(action)} />
+              <button className="btn btn-primary" onClick={() => { if (action) handleAction(action); }} disabled={!action}>Submit</button>
+            </div>
+          </div>
+        )}
+
+        {currentGame === 'emoji-memory' && (
+          <EmojiMemoryGame sequence={gameData?.sequence || []} onResult={handleAction} />
+        )}
+
+        {currentGame === 'typing-speed' && (
+          <TypingSpeedGame text={gameData?.text || ''} onResult={handleAction} />
+        )}
+
+        {currentGame === 'reaction-time' && (
+          <ReactionTimeGame onResult={handleAction} round={round} />
+        )}
+
+        {currentGame === 'math-blitz' && (
+          <MathBlitzGame question={gameData?.question || ''} onResult={handleAction} round={round} />
+        )}
+
+        {currentGame === 'color-rush' && (
+          <ColorRushGame onResult={handleAction} round={round} />
+        )}
+
+        {currentGame === 'aim-master' && (
+          <AimMasterGame onResult={handleAction} round={round} />
+        )}
+
+        {currentGame === 'stickman-fight' && (
+          <div className="game-card">
+            <div className="game-title-row"><span className="icon">🧍</span><h3>Stickman Fight</h3><span className="tag">Round {round}</span></div>
+            <div className="stickman-wrap">
+              <div className="stickman-area">
+                <canvas className="stickman-canvas" width={160} height={260}></canvas>
+                <canvas className="stickman-canvas" width={160} height={260}></canvas>
+              </div>
+              <div className="stickman-btns">
+                <button className="btn-stickman" style={{
+                  background: 'linear-gradient(135deg,#3b82f6,#2563eb)', color: '#fff', border: 'none', padding: '12px 18px', borderRadius: 10, fontWeight: 800, cursor: 'pointer', fontSize: '0.95rem'
+                }}>🥊 Punch</button>
+                <button className="btn-stickman" style={{
+                  background: 'linear-gradient(135deg,#f43f5e,#e11d48)', color: '#fff', border: 'none', padding: '12px 18px', borderRadius: 10, fontWeight: 800, cursor: 'pointer', fontSize: '0.95rem'
+                }}>🦶 Kick</button>
+              </div>
+              <div className="stickman-results">
+                <div className="stat"><div className="num">{pW}</div><div className="lbl">Punches</div></div>
+                <div className="stat"><div className="num">{kW}</div><div className="lbl">Kicks</div></div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {currentGame === 'car-racer' && (
+          <div className="game-card">
+            <div className="game-title-row"><span className="icon">🏎</span><h3>Car Racer</h3><span className="tag">Round {round}</span></div>
+            <div className="car-wrapper">
+              <div className="car-canvas">
+                <canvas width={480} height={340}></canvas>
+                <div className="car-hud">
+                  <div className="hud-item speed"><div className="lbl">Speed</div><div className="val">{speed.toFixed(1)}</div></div>
+                  <div className="hud-item lives"><div className="lbl">Lives</div><div className="val">❤️ {lives}</div></div>
+                  <div className="hud-item score"><div className="lbl">Score</div><div className="val">{score}</div></div>
+                </div>
+              </div>
+              <div className="car-overlay hidden">
+                <p>🖱 Click / space to boost</p>
+              </div>
+            </div>
+            <div className="car-controls">
+              <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
+                <button className="btn btn-secondary" onClick={() => { /* steering */ }}>⬅ ➡</button>
+                <button className="btn btn-secondary" onClick={() => { /* boost */ }}>🚀 Boost</button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {currentGame === 'bike-racer' && (
+          <div className="game-card">
+            <div className="game-title-row"><span className="icon">🏍</span><h3>Bike Racer</h3><span className="tag">Round {round}</span></div>
+            <div className="bike-wrapper">
+              <div className="bike-canvas">
+                <canvas width={480} height={340}></canvas>
+                <div className="bike-hud">
+                  <div className="hud-item speed"><div className="lbl">Speed</div><div className="val">{speed.toFixed(1)}</div></div>
+                  <div className="hud-item lives"><div className="lbl">Lives</div><div className="val">❤️ {lives}</div></div>
+                  <div className="hud-item score"><div className="lbl">Score</div><div className="val">{score}</div></div>
+                </div>
+              </div>
+              <div className="bike-overlay hidden">
+                <p>⬅ ➡ lean · click boost</p>
+              </div>
+            </div>
+            <div className="bike-controls">
+              <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
+                <button className="btn btn-secondary" onClick={() => { /* lean */ }}>⬅ ➡</button>
+                <button className="btn btn-secondary" onClick={() => { /* boost */ }}>🚀 Boost</button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {gameResult && playerRole && (
+        <div className={`game-result ${gameResult.winner === playerRole ? 'win' : gameResult.winner === 'tie' ? 'tie' : 'lose'}`}>
+          {gameResult.winner === 'tie' ? '🤝 Tie!' :
+           gameResult.winner === playerRole ? '🏆 You win this round!' : '😞 Opponent wins this round.'}
+        </div>
+      )}
+    </div>
+  );
+
+  /* ------------------------------------------------------------------ */
+  /*  END VIEW                                                          */
+  /* ------------------------------------------------------------------ */
+  const EndView = () => (
+    <div className="end-view">
+      <div className="logo-big">🎉</div>
+      <h2>{gameWinner.winner === 'tie' ? '🤝 It\'s a tie!' : gameWinner.winner === playerRole ? '🏆 You win!' : '😢 You lose'}</h2>
+      <p>Final scores: <b>P1 {gameWinner.finalScores?.player1?.score || 0}</b> — <b>P2 {gameWinner.finalScores?.player2?.score || 0}</b></p>
+      {(gameWinner.winner !== 'tie') && (
+        <div className="dare-banner end-banner">
+          🎁 <b>Dare:</b> {gameWinner.dares?.[playerRole === 'player1' ? 'player2' : 'player1'] || 'No dare available'}
+        </div>
+      )}
+      <div className="end-actions">
+        {playerType === 'receiver' && (
+          <button className="btn btn-success btn-lg" onClick={() => {}}>
+            💾 Download File
+          </button>
+        )}
+        <button className="btn btn-secondary btn-lg" onClick={() => window.location.reload()}>
+          🔄 Play again
         </button>
       </div>
     </div>
   );
-  if (view === 'waiting') return (
-    <div className="waiting-screen" style={{padding:40, textAlign:'center'}}>
-      <h2>Waiting for other player to join...</h2>
-      
-      {/* Connection Status */}
-      <div style={{
-        margin: '1em 0',
-        padding: '0.5em',
-        borderRadius: '8px',
-        backgroundColor: connectionStatus === 'connected' ? '#d4edda' : 
-                         connectionStatus === 'error' ? '#f8d7da' : '#fff3cd',
-        color: connectionStatus === 'connected' ? '#155724' : 
-               connectionStatus === 'error' ? '#721c24' : '#856404',
-        border: `1px solid ${connectionStatus === 'connected' ? '#c3e6cb' : 
-                           connectionStatus === 'error' ? '#f5c6cb' : '#ffeaa7'}`
-      }}>
-        <strong>Connection Status:</strong> {
-          connectionStatus === 'connected' ? '✅ Connected' :
-          connectionStatus === 'error' ? '❌ Connection Error' :
-          connectionStatus === 'disconnected' ? '❌ Disconnected' :
-          '⏳ Connecting...'
-        }
-      </div>
-      
-      <div className="score-display">
-        <div><b>Player Type:</b> {playerType}</div>
-        <div><b>Code:</b> {code}</div>
-      </div>
-      <div style={{margin:'1em 0', padding:'1em', backgroundColor:'#f8f9fa', borderRadius:'8px'}}>
-        <b>Your Dare:</b> {dare}
-      </div>
-      {waitingHint && <div style={{color:'#e67e22',marginTop:16, padding:'1em', backgroundColor:'#fff3cd', borderRadius:'8px'}}>{waitingHint}</div>}
-      <div style={{marginTop:24, color:'#888', fontSize:'0.98em'}}>
-        <ul style={{paddingLeft:20}}>
-          <li>Both sender and receiver must join with the same code.</li>
-          <li>Both must select or enter a dare and click Join.</li>
-          <li>If stuck, reload and try again in a new tab/window.</li>
-          <li>Make sure both devices are on the same WiFi network.</li>
-        </ul>
-      </div>
-      
-      {/* Mobile-specific instructions */}
-      {/Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) && (
-        <div style={{
-          marginTop: '1em',
-          padding: '1em',
-          backgroundColor: '#e3f2fd',
-          borderRadius: '8px',
-          border: '1px solid #bbdefb'
-        }}>
-          <h4 style={{color: '#1976d2', marginBottom: '0.5em'}}>📱 Mobile User Tips:</h4>
-          <ul style={{textAlign: 'left', paddingLeft: '1.5em', color: '#1976d2'}}>
-            <li>Make sure the desktop user has also joined with code: <strong>{code}</strong></li>
-            <li>Both users must enter a dare and click "Join Game"</li>
-            <li>If waiting too long, ask the desktop user to refresh their page</li>
-          </ul>
-        </div>
-      )}
-      
-      {/* Debug Information */}
-      {/* <div style={{
-      marginTop: '1em',
-      padding: '1em',
-      backgroundColor: '#f8f9fa',
-      borderRadius: '8px',
-      border: '1px solid #dee2e6',
-      fontSize: '0.9em'
-    }}>
-      <h4 style={{color: '#6c757d', marginBottom: '0.5em'}}>🔧 Debug Info:</h4>
-      <p><strong>Player Type:</strong> {playerType}</p>
-      <p><strong>Room Code:</strong> {code}</p>
-      <p><strong>Connection Status:</strong> {connectionStatus}</p>
-      <p><strong>Socket ID:</strong> {socket?.id || 'Not connected'}</p>
-      <p><strong>Transport:</strong> {socket?.io?.engine?.transport?.name || 'Unknown'}</p>
-    </div> */}
-    </div>
-  );
-  if (view === 'game') return (
-    <div style={{padding:40}}>
-      <h2>Round {round}</h2>
-      <div>Dares: Sender: {dares.sender} | Receiver: {dares.receiver}</div>
-              <div>Scores: Player 1 {scores.player1} - Player 2 {scores.player2}</div>
-      
-      {/* Game-specific UI */}
-      <div style={{marginTop: '2em'}}>
-        
-        {currentGame === 'rockPaperScissors' && (
-          <div>
-            <h3>Rock Paper Scissors - Round {round}</h3>
-            {gameResult && (
-              <div style={{margin:'1em 0',padding:'1em',background:'#f8f9fa',borderRadius:'8px',border:'1px solid #dee2e6'}}>
-                <p><strong>Your choice:</strong> {playerType === 'sender' ? gameResult.player1?.choice : gameResult.player2?.choice}</p>
-                <p><strong>Opponent's choice:</strong> {playerType === 'sender' ? gameResult.player2?.choice : gameResult.player1?.choice}</p>
-                <p><strong>Winner:</strong> {
-  !playerRole
-    ? '...'
-    : gameResult.winner === 'tie'
-      ? 'Tie'
-      : (gameResult.winner === playerRole ? 'You' : 'Opponent')
-}</p>
-                <p><strong>Your score:</strong> {playerType === 'sender' ? scores.player1 : scores.player2}</p>
-                <p><strong>Opponent's score:</strong> {playerType === 'sender' ? scores.player2 : scores.player1}</p>
-              </div>
-            )}
-            <div className="game-controls">
-              <button 
-                onClick={() => handleAction('rock')} 
-                disabled={!!action}
-                style={{fontSize:'2em',padding:'1em',minWidth:'80px',minHeight:'80px',margin:'0.5em'}}
-              >
-                🪨
-              </button>
-              <button 
-                onClick={() => handleAction('paper')} 
-                disabled={!!action}
-                style={{fontSize:'2em',padding:'1em',minWidth:'80px',minHeight:'80px',margin:'0.5em'}}
-              >
-                📄
-              </button>
-              <button 
-                onClick={() => handleAction('scissors')} 
-                disabled={!!action}
-                style={{fontSize:'2em',padding:'1em',minWidth:'80px',minHeight:'80px',margin:'0.5em'}}
-              >
-                ✂️
-              </button>
-            </div>
-          </div>
-        )}
-        
-        {currentGame === 'tapWar' && (
-          <TapWarGame onResult={handleAction} round={round} socket={socket} code={code} />
-        )}
-        
-        {currentGame === 'quickQuiz' && (
-          <div>
-            <h3>Quick Quiz - Round {round}</h3>
-            {gameData && (
-              <div style={{marginBottom: '1em', padding: '1em', backgroundColor: '#f9f9f9', borderRadius: '8px'}}>
-                <p style={{fontSize: '1.2em', fontWeight: 'bold'}}>Question:</p>
-                <p style={{fontSize: '1.1em'}}>{gameData.question}</p>
-              </div>
-            )}
-            <div className="input-group" style={{marginBottom: '1em'}}>
-              <input 
-                placeholder="Type your answer..." 
-                value={action} 
-                onChange={(e) => setAction(e.target.value)}
-                onKeyPress={(e) => e.key === 'Enter' && handleAction(action)}
-                style={{padding: '0.8em', fontSize: '1em', width: '100%', marginBottom: '0.5em', boxSizing: 'border-box'}}
-              />
-              <button 
-                onClick={() => handleAction(action)} 
-                disabled={!action}
-                style={{padding: '0.8em 1.5em', fontSize: '1em', backgroundColor: '#007bff', color: 'white', border: 'none', borderRadius: '8px', width: '100%'}}
-              >
-                Submit Answer
-              </button>
-            </div>
-            <div style={{fontSize: '0.9em', color: '#666', textAlign: 'center'}}>
-              Tip: Answer quickly and accurately!
-            </div>
-          </div>
-        )}
-        
-        {currentGame === 'emojiMemory' && (
-          <EmojiMemoryGame sequence={gameData?.sequence || []} onResult={handleAction} />
-        )}
-        
-        {currentGame === 'typingSpeed' && (
-          <TypingSpeedGame text={gameData?.text || ''} onResult={handleAction} />
-        )}
-        
-        {currentGame === 'reactionTime' && (
-          <ReactionTimeGame onResult={handleAction} round={round} />
-        )}
-        
-        {/* Fallback for unknown game types */}
-        {currentGame === '' && (
-          <div>
-            <h3>Default Game - Rock Paper Scissors</h3>
-            <div className="game-controls">
-              <button 
-                onClick={() => handleAction('rock')} 
-                disabled={!!action}
-                style={{fontSize:'2em',padding:'1em',minWidth:'80px',minHeight:'80px',margin:'0.5em'}}
-              >
-                🪨
-              </button>
-              <button 
-                onClick={() => handleAction('paper')} 
-                disabled={!!action}
-                style={{fontSize:'2em',padding:'1em',minWidth:'80px',minHeight:'80px',margin:'0.5em'}}
-              >
-                📄
-              </button>
-              <button 
-                onClick={() => handleAction('scissors')} 
-                disabled={!!action}
-                style={{fontSize:'2em',padding:'1em',minWidth:'80px',minHeight:'80px',margin:'0.5em'}}
-              >
-                ✂️
-              </button>
-            </div>
-          </div>
-        )}
-      </div>
-      
-      {gameResult && playerRole && (
-        <div className={`game-result ${gameResult.winner === playerRole ? 'win' : gameResult.winner === 'tie' ? '' : 'lose'}`} style={{marginTop: '2em', padding: '1em', backgroundColor: '#f0f8ff', borderRadius: '8px', textAlign:'center'}}>
-          <h4>Round Result:</h4>
-          <p style={{fontSize:'1.2em', fontWeight:'bold'}}>
-            Winner: {gameResult.winner === 'tie' ? 'Tie' : (gameResult.winner === playerRole ? 'You' : 'Opponent')}
-          </p>
-          <p>Reason: {gameResult.reason}</p>
-          <div className="score-display">
-            <div><b>Player 1:</b> {scores.player1}</div>
-            <div><b>Player 2:</b> {scores.player2}</div>
-          </div>
-          {gameResult.winner === playerRole && gameResult.winner !== 'tie' && <span style={{fontSize:'3em'}}>🏆</span>}
-          {gameResult.winner !== playerRole && gameResult.winner !== 'tie' && <span style={{fontSize:'3em'}}>😢</span>}
-          {gameResult.winner === 'tie' && <span style={{fontSize:'3em'}}>🤝</span>}
-        </div>
-      )}
-    </div>
-  );
-  if (view === 'end') {
-    console.log('END SCREEN DEBUG:', {
-      playerType,
-      playerRole,
-      winner: gameWinner?.winner,
-      dares: gameWinner?.dares
-    });
-    // Fallback: if playerRole is not set but playerType is, set playerRole
-    if (!playerRole && playerType) {
-      if (playerType === 'sender') setPlayerRole('player1');
-      else if (playerType === 'receiver') setPlayerRole('player2');
-      // Show loading while setting
-      return (
-        <div style={{padding:40, textAlign:'center'}}>
-          <h2>Game Over!</h2>
-          <div>Loading winner and dare...</div>
-        </div>
-      );
-    }
-    const dareText = gameWinner.dares && (playerRole === 'player1' ? gameWinner.dares.player2 : gameWinner.dares.player1);
-    if (view === 'end' && playerType === 'receiver') {
-      // Remove the alert for receiver debug info
-    }
-    return (
-      <div style={{padding:40, textAlign:'center'}}>
-        <h2>Game Over!</h2>
-        <div style={{fontSize:'2em', margin:'1em'}}>
-          {gameWinner.winner === 'tie' && <span>🤝 <b>It&apos;s a Tie!</b></span>}
-          {gameWinner.winner === playerRole && gameWinner.winner !== 'tie' && <span>🏆 <b>You Win!</b></span>}
-          {gameWinner.winner !== playerRole && gameWinner.winner !== 'tie' && <span>😢 <b>You Lose</b></span>}
-        </div>
-        <div style={{fontSize:'1.2em', margin:'1em 0'}}>
-          Final Scores:<br/>
-          <b>Player 1:</b> {gameWinner.finalScores ? gameWinner.finalScores.player1?.score : (gameWinner.scores ? gameWinner.scores.player1 : 0)} &nbsp; | &nbsp; <b>Player 2:</b> {gameWinner.finalScores ? gameWinner.finalScores.player2?.score : (gameWinner.scores ? gameWinner.scores.player2 : 0)}
-        </div>
-        {gameWinner.winner !== 'tie' && gameWinner.winner !== playerRole && (
-          <div>
-            Dare: {gameWinner.dares && gameWinner.dares[playerRole]
-              ? gameWinner.dares[playerRole]
-              : <span style={{color:'#888'}}>No dare available</span>}
-          </div>
-        )}
-        {playerType === 'receiver' && (
-          <>
-            <button onClick={downloadFile} disabled={isDownloading}>Download File</button>
-            <button
-              style={{marginLeft: 12, marginTop: 8}}
-              onClick={() => window.location.reload()}
-            >
-              Go to Home
-            </button>
-          </>
-        )}
-        <button onClick={() => window.location.reload()}>Restart</button>
-      </div>
-    );
-  }
+
+  if (view === 'home') return <HomeView />;
+  if (view === 'sender') return <SenderView />;
+  if (view === 'receiver') return <ReceiverView />;
+  if (view === 'waiting') return <WaitingView />;
+  if (view === 'game') return <GameView />;
+  if (view === 'end') return <EndView />;
   return null;
 }
 
-export default App; 
-
+/* ============================================================
+   SUB-COMPONENTS (small games)
+   ============================================================ */
 function TapWarGame({ onResult, round, socket, code }) {
   const [taps, setTaps] = useState(0);
   const [timer, setTimer] = useState(5);
   const [running, setRunning] = useState(false);
   const [startTime, setStartTime] = useState(null);
-  
-  useEffect(() => {
-    setTaps(0);
-    setTimer(5);
-    setRunning(false);
-    setStartTime(null);
-  }, [round]);
-  
+  useEffect(() => { setTaps(0); setTimer(5); setRunning(false); setStartTime(null); }, [round]);
   useEffect(() => {
     let raf;
     function tick() {
       if (!running || !startTime) return;
-      const elapsed = (Date.now() - startTime) / 1000;
-      const left = Math.max(0, 5 - elapsed);
+      const left = Math.max(0, 5 - (Date.now() - startTime) / 1000);
       setTimer(left);
-      if (left > 0) {
-        raf = requestAnimationFrame(tick);
-      } else {
-        setRunning(false);
-        onResult(taps);
-      }
+      if (left > 0) raf = requestAnimationFrame(tick);
+      else { setRunning(false); onResult(taps); }
     }
-    if (running) {
-      raf = requestAnimationFrame(tick);
-    }
+    if (running) raf = requestAnimationFrame(tick);
     return () => raf && cancelAnimationFrame(raf);
   }, [running, startTime, taps, onResult]);
-  
   function handleTap() {
-    if (!running) {
-      setRunning(true);
-      setTaps(1);
-      setStartTime(Date.now());
-      setTimer(5);
-    } else {
-      setTaps(t => t + 1);
-    }
+    if (!running) { setRunning(true); setTaps(1); setStartTime(Date.now()); setTimer(5); }
+    else setTaps(t => t + 1);
   }
-  
   return (
-    <div>
-      <h3>Tap War - Tap as fast as you can!</h3>
-      <div className="timer">Time left: {timer.toFixed(1)}s</div>
-      <div style={{fontSize:'1.5em',margin:'0.5em 0',textAlign:'center'}}>Taps: {taps}</div>
-      <div className="tap-area">
-        <button 
-          onClick={handleTap} 
-          disabled={timer === 0} 
-          style={{
-            fontSize:'3em',
-            padding:'2em',
-            margin:'1em 0',
-            minWidth:'200px',
-            minHeight:'200px',
-            borderRadius:'50%',
-            backgroundColor: running ? '#dc3545' : '#28a745',
-            border:'none',
-            color:'white',
-            cursor:'pointer'
-          }}
-        >
+    <div className="game-card">
+      <div className="game-title-row"><span className="icon">👆</span><h3>Tap War</h3><span className="tag">Round {round}</span></div>
+      <div className="timer-bar" style={{ width: '100%', height: 12, borderRadius: 999, background: 'var(--bg-surface-2)', overflow: 'hidden' }}>
+        <div className="tap-progress" style={{ height: '100%', width: `${(5 - timer) / 5 * 100}%`, background: 'var(--brand-500)' }} />
+      </div>
+      <div style={{ fontSize: '1.2rem', fontWeight: 800, color: 'var(--ink-primary)' }}>Taps: {taps} · {timer.toFixed(1)}s</div>
+      <div className="game-controls">
+        <button className="btn btn-primary btn-lg" onClick={handleTap} disabled={timer === 0}>
           {running ? 'TAP!' : 'START'}
         </button>
       </div>
@@ -1222,58 +809,28 @@ function TapWarGame({ onResult, round, socket, code }) {
 }
 
 function EmojiMemoryGame({ sequence, onResult }) {
-  const emojiSet = ['😀', '😎', '🎮', '🚀', '⭐', '🎯', '🎪', '🎨'];
   const [input, setInput] = useState([]);
-  const [show, setShow] = useState(true);
-  useEffect(() => {
-    setShow(true);
-    setInput([]);
-    const t = setTimeout(() => setShow(false), 2000 + sequence.length * 500);
-    return () => clearTimeout(t);
-  }, [sequence]);
+  const [shown, setShown] = useState(true);
+  useEffect(() => { setInput([]); setShown(true); const t = setTimeout(() => setShown(false), 2200 + sequence.length * 500); return () => clearTimeout(t); }, [sequence]);
   function handleEmojiClick(e) {
-    if (show) return;
-    const val = e.target.textContent;
-    setInput(arr => {
-      const next = [...arr, val];
-      if (next.length === sequence.length) {
-        let correct = 0;
-        for (let i = 0; i < sequence.length; i++) if (sequence[i] === next[i]) correct++;
-        onResult(correct);
-      }
-      return next;
-    });
+    if (shown) return;
+    const v = e.target.textContent;
+    setInput(arr => { const n = [...arr, v]; if (n.length === sequence.length) { let c = 0; for (let i = 0; i < sequence.length; i++) if (sequence[i] === n[i]) c++; onResult(c); } return n; });
   }
   return (
-    <div>
-      <h3>Emoji Memory</h3>
-      {show ? (
-        <div style={{fontSize:'2em', textAlign:'center', padding:'1em'}}>{sequence.join(' ')}</div>
+    <div className="game-card">
+      <div className="game-title-row"><span className="icon">🧩</span><h3>Emoji Memory</h3><span className="tag">Recall the sequence</span></div>
+      {shown ? (
+        <div style={{ fontSize: '1.6rem', textAlign: 'center', padding: '12px', fontWeight: 800 }}>{sequence.join(' ')}</div>
       ) : (
         <div>
-          <div style={{textAlign:'center', marginBottom:'1em'}}>Repeat the sequence:</div>
-          <div className="emoji-grid" style={{fontSize:'2em'}}>
-            {emojiSet.map(e => (
-              <button 
-                key={e} 
-                style={{
-                  cursor:'pointer',
-                  margin:'0.2em',
-                  border:'2px solid #007bff',
-                  padding:'0.5em',
-                  borderRadius:'8px',
-                  backgroundColor:'white',
-                  fontSize:'1.5em',
-                  minHeight:'60px',
-                  minWidth:'60px'
-                }} 
-                onClick={handleEmojiClick}
-              >
-                {e}
-              </button>
+          <div style={{ textAlign: 'center', marginBottom: '8px' }}>Repeat the sequence:</div>
+          <div className="emoji-grid" style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', justifyContent: 'center' }}>
+            {['😀','😎','🎮','🚀','⭐','🎯','🎪','🎨','🐱','🐶','🌸','⚽'].map(e => (
+              <button key={e} className="btn-pill" style={{ fontSize: '1.2rem' }} onClick={handleEmojiClick}>{e}</button>
             ))}
           </div>
-          <div>Your input: {input.join(' ')}</div>
+          <div style={{ fontWeight: 700, color: 'var(--ink-secondary)', textAlign: 'center' }}>Your input: {input.join(' ')}</div>
         </div>
       )}
     </div>
@@ -1282,129 +839,166 @@ function EmojiMemoryGame({ sequence, onResult }) {
 
 function TypingSpeedGame({ text, onResult }) {
   const [input, setInput] = useState('');
-  const [start, setStart] = useState(null);
+  const [started, setStarted] = useState(false);
   const [done, setDone] = useState(false);
-  
-  // Reset state when text changes (new round)
-  useEffect(() => {
-    setInput('');
-    setStart(null);
-    setDone(false);
-  }, [text]);
-  
+  useEffect(() => { setInput(''); setStarted(false); setDone(false); }, [text]);
   function handleChange(e) {
-    if (!start) setStart(Date.now());
+    if (!started) { setStarted(true); }
     setInput(e.target.value);
-    if (e.target.value === text) {
-      setDone(true);
-      const time = (Date.now() - start) / 1000;
-      const wpm = Math.round((text.split(' ').length / time) * 60);
-      onResult(wpm);
-    }
+    if (e.target.value === text) { setDone(true); const t = (Date.now() - (started ? 0 : 0)) / 1000; const wpm = Math.round((text.split(' ').length / (t || 1)) * 60); onResult(wpm); }
   }
   return (
-    <div>
-      <h3>Typing Speed</h3>
-      <div style={{marginBottom:'1em',fontStyle:'italic',color:'#666',textAlign:'center',padding:'1em',backgroundColor:'#f9f9f9',borderRadius:'8px'}}>{text}</div>
-      <div className="typing-area">
-        <textarea 
-          value={input} 
-          onChange={handleChange} 
-          disabled={done} 
-          rows={4} 
-          style={{
-            width:'100%',
-            padding:'1em',
-            fontSize:'1.1em',
-            borderRadius:'8px',
-            border:'2px solid #007bff',
-            resize:'none',
-            boxSizing:'border-box'
-          }}
-          placeholder="Start typing here..."
-        />
-      </div>
-      {done && (
-        <div style={{
-          color: '#28a745', 
-          fontWeight: 'bold',
-          textAlign:'center',
-          padding:'0.5em',
-          backgroundColor:'#28a745',
-          color:'white',
-          borderRadius:'8px',
-          marginTop:'1em'
-        }}>
-          ✅ Done! WPM sent.
-        </div>
-      )}
+    <div className="game-card">
+      <div className="game-title-row"><span className="icon">⌨️</span><h3>Typing Speed</h3><span className="tag">Round {round}</span></div>
+      <div style={{ padding: '10px', borderRadius: 10, background: 'var(--bg-surface-2)', fontStyle: 'italic', color: 'var(--ink-secondary)', whiteSpace: 'pre-wrap' }}>{text}</div>
+      <textarea className="input" placeholder="Start typing…" value={input} onChange={handleChange} disabled={done} rows={4} style={{ fontFamily: 'var(--font-mono)', fontSize: '1rem' }} />
+      {done && <div style={{ color: 'var(--success)', fontWeight: 800, textAlign: 'center' }}>✅ Done! WPM sent.</div>}
     </div>
   );
 }
 
 function ReactionTimeGame({ onResult, round }) {
-  const [waiting, setWaiting] = useState(true);
   const [ready, setReady] = useState(false);
   const [start, setStart] = useState(null);
   const [done, setDone] = useState(false);
-  
-  // Reset state for new rounds and start timer
-  useEffect(() => {
-    setWaiting(true);
-    setReady(false);
-    setStart(null);
-    setDone(false);
-    
-    // Start the timer for the new round
-    const t = setTimeout(() => { 
-      setReady(true); 
-      setStart(Date.now()); 
-    }, 1000 + Math.random() * 2000);
-    
-    return () => clearTimeout(t);
-  }, [round]);
-  
+  useEffect(() => { setReady(false); setStart(null); setDone(false); const t = setTimeout(() => { setReady(true); setStart(Date.now()); }, 1000 + Math.random() * 2000); return () => clearTimeout(t); }, [round]);
   function handleClick() {
     if (!ready || done) return;
     setDone(true);
     onResult(Date.now() - start);
   }
   return (
-    <div>
-      <h3>Reaction Time</h3>
-      <div className="reaction-area" style={{
-        margin:'1em 0',
-        height:120,
-        background:ready?'#4CAF50':'#f44336',
-        color:'#fff',
-        display:'flex',
-        alignItems:'center',
-        justifyContent:'center',
-        fontSize:'2em',
-        borderRadius:12,
-        fontWeight:'bold'
-      }}>
-        {ready ? 'CLICK!' : 'Wait for green...' }
+    <div className="game-card">
+      <div className="game-title-row"><span className="icon">⚡</span><h3>Reaction Time</h3><span className="tag">Quickest wins</span></div>
+      <div className="reaction-area" style={{ height: 140, borderRadius: 12, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.8rem', fontWeight: 800, background: ready ? 'var(--success)' : 'var(--danger)' }}>
+        {ready ? 'CLICK!' : 'Wait for it...'}
       </div>
-      <div style={{textAlign:'center'}}>
-        <button 
-          onClick={handleClick} 
-          disabled={!ready || done} 
-          style={{
-            fontSize:'2em',
-            padding:'1.5em 3em',
-            minWidth:'200px',
-            minHeight:'80px',
-            borderRadius:'12px',
-            backgroundColor: ready ? '#28a745' : '#6c757d',
-            border:'none',
-            color:'white',
-            cursor: ready ? 'pointer' : 'not-allowed'
-          }}
-        >
-          {done ? 'Done!' : 'Click Me!'}
-        </button>
-      </div>
+      <button className="btn btn-primary" onClick={handleClick} disabled={!ready || done}>{done ? 'Done!' : 'Click me!'}</button>
     </div>
   );
-} 
+}
+
+function MathBlitzGame({ question, onResult, round }) {
+  const [answer, setAnswer] = useState('');
+  const [locked, setLocked] = useState(false);
+  useEffect(() => { setAnswer(''); setLocked(false); }, [round, question]);
+  function submit() {
+    if (locked || answer === '') return;
+    setLocked(true);
+    onResult(JSON.stringify({ answer: Number(answer) }));
+  }
+  return (
+    <div className="game-card">
+      <div className="game-title-row"><span className="icon">🔢</span><h3>Math Blitz</h3><span className="tag">First correct wins</span></div>
+      <div className="math-question" style={{ fontWeight: 800, fontSize: '1.1rem' }}>{question} = ?</div>
+      {!locked ? (
+        <div className="math-input-row" style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', justifyContent: 'center' }}>
+          <input className="input" type="number" placeholder="?" value={answer} autoFocus onChange={e => setAnswer(e.target.value)} onKeyDown={e => e.key === 'Enter' && submit()} />
+          <button className="btn btn-primary btn-sm" onClick={submit} disabled={answer === ''}>Lock In 🔒</button>
+        </div>
+      ) : <div className="game-result" style={{ fontWeight: 800 }}>🔒 Answer locked! Waiting for opponent…</div>}
+    </div>
+  );
+}
+
+function ColorRushGame({ onResult, round }) {
+  const [running, setRunning] = useState(false);
+  const [done, setDone] = useState(false);
+  const [timeLeft, setTimeLeft] = useState(8);
+  const [word, setWord] = useState(null);
+  const [ink, setInk] = useState(null);
+  const [target, setTarget] = useState(null);
+  const [hits, setHits] = useState(0);
+  const [misses, setMisses] = useState(0);
+  const COLORS = [ { name: 'RED', hex: '#e74c3c' }, { name: 'GREEN', hex: '#27ae60' }, { name: 'BLUE', hex: '#2980b9' }, { name: 'YELLOW', hex: '#f1c40f' }, { name: 'PURPLE', hex: '#8e44ad' }, { name: 'ORANGE', hex: '#e67e22' } ];
+  const roundDur = 8;
+  useEffect(() => { setRunning(false); setDone(false); setTimeLeft(roundDur); setWord(null); setInk(null); setTarget(null); setHits(0); setMisses(0); }, [round]);
+  useEffect(() => {
+    if (!running) return;
+    const iv = setInterval(() => { setTimeLeft(t => { const n = +(t - 0.1).toFixed(1); if (n <= 0) { clearInterval(iv); setRunning(false); setDone(true); return 0; } return n; }); });
+    return () => clearInterval(iv);
+  }, [running]);
+  useEffect(() => { if (done) onResult(JSON.stringify({ hits, timeMs: roundDur * 1000 })); }, [done]);
+  function newWord() {
+    const w = COLORS[Math.floor(Math.random() * COLORS.length)];
+    let k = COLORS[Math.floor(Math.random() * COLORS.length)];
+    if (Math.random() < 0.6) while (k.name === w.name) k = COLORS[Math.floor(Math.random() * COLORS.length)];
+    setWord(w); setInk(k);
+    setTarget(Math.random() < 0.5 ? { type: 'word', name: w.name } : { type: 'ink', name: k.name });
+  }
+  function startGame() { newWord(); setRunning(true); }
+  function handlePick(colorName) {
+    if (!running || !target) return;
+    const isMatch = target.type === 'word' ? colorName === target.name : colorName === target.name;
+    if (isMatch) setHits(h => h + 1); else setMisses(m => m + 1);
+    newWord();
+  }
+  return (
+    <div className="game-card">
+      <div className="game-title-row"><span className="icon">🎨</span><h3>Color Rush</h3><span className="tag">Round {round}</span></div>
+      {!running && !done && (
+        <div style={{ textAlign: 'center', padding: '16px' }}>
+          <p style={{ fontSize: '0.9rem', color: 'var(--ink-secondary)' }}>A word appears in a different ink color. Click the <b>matching swatch</b> — for the word or its ink. <b>{roundDur}s</b>, go!</p>
+          <button className="btn btn-primary" onClick={startGame}>▶ Start Round</button>
+        </div>
+      )}
+      {running && (
+        <>
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 800, color: 'var(--ink-tertiary)', marginBottom: 8 }}>
+            <span>⏱ {timeLeft.toFixed(1)}s</span>
+            <span>✅ {hits} · ❌ {misses}</span>
+          </div>
+          <div style={{ fontWeight: 800, fontSize: '2rem', marginBottom: 6 }}>{word ? word.name : ''}</div>
+          <div className="stroop-grid" style={{ display: 'flex', gap: '10px', justifyContent: 'center', flexWrap: 'wrap' }}>
+            {COLORS.map(c => <button key={c.name} className="stroop-swatch" style={{ background: c.hex, width: 60, height: 60, borderRadius: 10, fontWeight: 800, cursor: 'pointer' }} onClick={() => handlePick(c.name)}>{c.name}</button>)}
+          </div>
+        </>
+      )}
+      {done && <div className="game-result" style={{ fontWeight: 800 }}>🏁 Time! {hits} hits / {misses} misses — waiting for opponent…</div>}
+    </div>
+  );
+}
+
+function AimMasterGame({ onResult, round }) {
+  const [hits, setHits] = useState(0);
+  const [timeLeft, setTimeLeft] = useState(10);
+  const [running, setRunning] = useState(false);
+  const [done, setDone] = useState(false);
+  const [dot, setDot] = useState(null);
+  const roundDur = 10;
+  useEffect(() => { setHits(0); setTimeLeft(roundDur); setRunning(false); setDone(false); setDot(null); }, [round]);
+  useEffect(() => {
+    if (!running) return;
+    const iv = setInterval(() => { setTimeLeft(t => { const n = +(t - 0.1).toFixed(1); if (n <= 0) { clearInterval(iv); setRunning(false); setDone(true); return 0; } return n; }); });
+    return () => clearInterval(iv);
+  }, [running]);
+  useEffect(() => { if (done) onResult(JSON.stringify({ hits, timeMs: roundDur * 1000 })); }, [done]);
+  function spawnDot(h) { const size = Math.max(14, 46 - h * 2); setDot({ x: 8 + Math.random() * 84, y: 8 + Math.random() * 84, size }); }
+  function startGame() { setRunning(true); spawnDot(0); }
+  function handleHit() { if (!running) return; const h = hits + 1; setHits(h); spawnDot(h); }
+  return (
+    <div className="game-card">
+      <div className="game-title-row"><span className="icon">🎯</span><h3>Aim Master</h3><span className="tag">Round {round}</span></div>
+      {!running && !done && (
+        <div style={{ textAlign: 'center', padding: '16px' }}>
+          <p style={{ fontSize: '0.9rem', color: 'var(--ink-secondary)' }}>Click the targets before time runs out. They get <b>smaller</b> as you score.</p>
+          <button className="btn btn-primary" onClick={startGame}>▶ Start Round</button>
+        </div>
+      )}
+      {running && (
+        <>
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 800, color: 'var(--ink-tertiary)', marginBottom: 8 }}>
+            <span>⏱ {timeLeft.toFixed(1)}s</span>
+            <span>🎯 {hits}</span>
+          </div>
+          <div className="aim-area" style={{ height: 260, borderRadius: 12, background: 'var(--bg-surface-2)', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+            {dot && <button className="aim-dot" style={{ position: 'absolute', left: `${dot.x}%`, top: `${dot.y}%`, width: dot.size, height: dot.size, borderRadius: '50%', background: '#3b82f6', cursor: 'pointer' }} onClick={handleHit} />}
+          </div>
+        </>
+      )}
+      {done && <div className="game-result" style={{ fontWeight: 800 }}>🏁 Time! You hit {hits} targets — waiting for opponent…</div>}
+    </div>
+  );
+}
+
+export default App;
