@@ -1,0 +1,10 @@
+.git
+node_modules
+**/node_modules
+**/build
+**/.cache
+backend/uploads
+backend/probe.js
+backend/test-e2e.js
+*.log
+/tmp

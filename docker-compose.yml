@@ -1,0 +1,11 @@
+services:
+  sharenplay:
+    build: .
+    image: sharenplay:2.0.0
+    container_name: sharenplay
+    ports:
+      - "7860:7860"
+    environment:
+      - PORT=7860
+      # CORS_ORIGIN=http://yourdomain.com   # optional: lock down allowed web origins
+    restart: unless-stopped

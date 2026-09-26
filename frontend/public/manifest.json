@@ -1,7 +1,7 @@
 {
   "short_name": "ShareNPlay",
-  "name": "ShareNPlay - Multiplayer Games & File Sharing",
-  "description": "Real-time multiplayer mini-games platform with file sharing capabilities",
+  "name": "ShareNPlay - Share · Play · Dare",
+  "description": "Cinematic real-time file sharing with 12 multiplayer mini-games. Share a file, play a duel, dare the loser.",
   "icons": [
     {
       "src": "favicon.ico",
@@ -11,20 +11,33 @@
     {
       "src": "logo192.png",
       "type": "image/png",
-      "sizes": "192x192"
+      "sizes": "192x192",
+      "purpose": "any"
     },
     {
       "src": "logo512.png",
       "type": "image/png",
-      "sizes": "512x512"
+      "sizes": "512x512",
+      "purpose": "any"
+    },
+    {
+      "src": "logo512.png",
+      "type": "image/png",
+      "sizes": "512x512",
+      "purpose": "maskable"
+    },
+    {
+      "src": "logo.svg",
+      "type": "image/svg+xml",
+      "sizes": "any"
     }
   ],
   "start_url": ".",
   "display": "standalone",
-  "theme_color": "#667eea",
-  "background_color": "#ffffff",
-  "orientation": "portrait",
-  "categories": ["games", "entertainment", "social"],
+  "orientation": "any",
+  "theme_color": "#04060f",
+  "background_color": "#04060f",
+  "categories": ["games", "entertainment", "social", "utilities"],
   "lang": "en",
   "scope": "/",
   "prefer_related_applications": false

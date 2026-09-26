@@ -1,4 +1,5 @@
 const express = require('express');
+const os = require('os');
 const http = require('http');
 const socketIo = require('socket.io');
 const cors = require('cors');
@@ -9,7 +10,7 @@ const app = express();
 const server = http.createServer(app);
 const io = socketIo(server, {
   cors: {
-    origin: ["http://localhost:3002", "http://192.168.1.38:3002", "http://localhost:3000", "http://192.168.1.38:3000"],
+    origin: process.env.CORS_ORIGIN ? process.env.CORS_ORIGIN.split(',').map(s => s.trim()) : true,
     methods: ["GET", "POST"],
     credentials: true
   },
@@ -29,7 +30,7 @@ const upload = multer({
 });
 
 // Middleware
-app.use(cors());
+app.use(cors({ origin: process.env.CORS_ORIGIN ? process.env.CORS_ORIGIN.split(',').map(s => s.trim()) : true }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
@@ -533,6 +534,26 @@ io.on('connection', (socket) => {
             winner: p1ReactionTime < p2ReactionTime ? 'player1' : p2ReactionTime < p1ReactionTime ? 'player2' : 'tie'
           };
           break;
+
+        default:
+          // Generic scoring for games without a dedicated case (math-blitz,
+          // color-rush, aim-master, stickman-fight, car-racer, bike-racer):
+          // compare numeric `value` payloads; higher wins the round.
+          const p1Val = Number(game.gameData[player1][game.currentRound].value) || 0;
+          const p2Val = Number(game.gameData[player2][game.currentRound].value) || 0;
+
+          if (p1Val > p2Val) {
+            game.scores[player1]++;
+          } else if (p2Val > p1Val) {
+            game.scores[player2]++;
+          }
+
+          roundResult = {
+            player1: { value: p1Val, score: game.scores[player1] },
+            player2: { value: p2Val, score: game.scores[player2] },
+            winner: p1Val > p2Val ? 'player1' : p2Val > p1Val ? 'player2' : 'tie'
+          };
+          break;
       }
       
       // Defensive check before emitting roundResult
@@ -742,6 +763,27 @@ app.get('/random-dare/:category', (req, res) => {
   res.json({ dare: randomDare });
 });
 
+app.get('/api/lan-info', (req, res) => {
+  const addresses = [];
+  for (const addrs of Object.values(os.networkInterfaces())) {
+    for (const n of addrs || []) {
+      if (n && n.family === 'IPv4' && !n.internal) addresses.push(n.address);
+    }
+  }
+  // Put the interface owning the default route first — that's the one
+  // the phone can actually reach (skips VirtualBox/WSL virtual adapters).
+  let primary = null;
+  try {
+    const out = require('child_process').execSync('route print -4 0.0.0.0', { encoding: 'utf8' });
+    const m = out.match(/^\s*0\.0\.0\.0\s+0\.0\.0\.0\s+\S+\s+(\d+\.\d+\.\d+\.\d+)\s+/m);
+    if (m) primary = m[1];
+  } catch (e) { /* fall back to original order */ }
+  if (primary) {
+    addresses.sort((a, b) => (b === primary) - (a === primary));
+  }
+  res.json({ lanIps: addresses, primary, port: Number(process.env.PORT) || 5000 });
+});
+
 app.get('/api/games', (req, res) => {
   res.json(Object.keys(GAMES).map(key => ({
     id: key,
@@ -752,6 +794,20 @@ app.get('/api/games', (req, res) => {
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
+
+// --- Static frontend serving (single-container deployment) ---
+// In dev this folder does not exist and the JSON index above stays active.
+// In Docker/Spaces the built SPA is copied to backend/../public_html.
+const DIST = [
+  path.join(__dirname, 'public_html'),   // container: /app/public_html
+  path.join(__dirname, '..', 'public_html'), // repo: backend/../public_html
+].find(dir => require('fs').existsSync(path.join(dir, 'index.html')));
+if (DIST) {
+  app.use(express.static(DIST));
+  app.get(/^\/(?!api|upload|fileinfo|download|dare).*/, (req, res) => {
+    res.sendFile(path.join(DIST, 'index.html'));
+  });
+}
 
 app.get('/', (req, res) => {
   res.json({ 
@@ -771,5 +827,12 @@ app.get('/', (req, res) => {
 const PORT = process.env.PORT || 5000;
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`ShareNPlay Backend running on port ${PORT}`);
-  console.log(`Access from mobile: http://192.168.1.38:${PORT}`);
+  const lans = [];
+for (const addrs of Object.values(os.networkInterfaces())) {
+  for (const n of addrs || []) {
+    if (n && n.family === 'IPv4' && !n.internal) lans.push(n.address);
+  }
+}
+const lanText = lans.length ? lans.map(ip => `http://${ip}:${PORT}`).join('  |  ') : `http://localhost:${PORT}`;
+console.log(`ShareNPlay LAN URLs: ${lanText}`);
 }); 

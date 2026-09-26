@@ -1,6 +1,6 @@
 {
   "name": "sharenplay-backend",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "ShareNPlay Backend Server",
   "main": "server.js",
   "scripts": {

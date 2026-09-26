@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="brand" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#22d3ee"/>
+      <stop offset="0.55" stop-color="#818cf8"/>
+      <stop offset="1" stop-color="#f472b6"/>
+    </linearGradient>
+    <linearGradient id="stage" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#0b1024"/>
+      <stop offset="1" stop-color="#05070f"/>
+    </linearGradient>
+    <radialGradient id="glowA" cx="0.2" cy="0.12" r="0.9">
+      <stop offset="0" stop-color="#22d3ee" stop-opacity="0.35"/>
+      <stop offset="1" stop-color="#22d3ee" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glowB" cx="0.85" cy="0.92" r="0.9">
+      <stop offset="0" stop-color="#a78bfa" stop-opacity="0.32"/>
+      <stop offset="1" stop-color="#a78bfa" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#stage)"/>
+  <rect width="512" height="512" rx="112" fill="url(#glowA)"/>
+  <rect width="512" height="512" rx="112" fill="url(#glowB)"/>
+  <polygon points="256,74 408,162 408,350 256,438 104,350 104,162" fill="none" stroke="url(#brand)" stroke-width="20" stroke-linejoin="round" opacity="0.95"/>
+  <g stroke="url(#brand)" stroke-width="16" stroke-linecap="round" fill="none" opacity="0.9">
+    <path d="M186 256 L330 172"/>
+    <path d="M186 256 L330 340"/>
+  </g>
+  <circle cx="186" cy="256" r="36" fill="url(#brand)"/>
+  <circle cx="186" cy="256" r="14" fill="#0b1024" opacity="0.55"/>
+  <circle cx="330" cy="172" r="29" fill="url(#brand)"/>
+  <circle cx="330" cy="340" r="29" fill="url(#brand)"/>
+</svg>

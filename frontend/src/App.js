@@ -2,19 +2,24 @@ import React, { useState, useEffect, useRef } from 'react';
 import io from 'socket.io-client';
 import axios from 'axios';
 import { QRCodeSVG } from 'qrcode.react';
-import './index.css';
 import confetti from 'canvas-confetti';
+import './index.css';
 
 /* ============================================================
    CONFIG
    ============================================================ */
-const FRONTEND_PORT = window.location.port || '3000';
-const BACKEND_URL = 'http://localhost:5000';
+// Same-origin when served by the container (Docker / Hugging Face Spaces on
+// port 7860 or any https host); dev mode (3002/3000) hits the backend on 5000.
+const SAME_ORIGIN = !window.location.port || window.location.port === '7860';
+const BACKEND_URL = SAME_ORIGIN
+  ? window.location.origin
+  : window.location.protocol + '//' + window.location.hostname + ':5000';
+const APP_URL = window.location.origin;
 
 const GAME_IDS = [
   'rock-paper-scissors', 'tap-war', 'quick-quiz', 'emoji-memory',
   'typing-speed', 'reaction-time', 'math-blitz', 'color-rush',
-  'aim-master', 'stickman-fight', 'car-racer', 'bike-racer'
+  'aim-master', 'stickman-fight', 'car-racer', 'bike-racer',
 ];
 
 const GAME_NAMES = {
@@ -29,7 +34,7 @@ const GAME_NAMES = {
   'aim-master': 'Aim Master',
   'stickman-fight': 'Stickman Fight',
   'car-racer': 'Car Racer',
-  'bike-racer': 'Bike Racer'
+  'bike-racer': 'Bike Racer',
 };
 
 const GAME_EMOJI = {
@@ -44,7 +49,7 @@ const GAME_EMOJI = {
   'aim-master': '🎯',
   'stickman-fight': '🧍',
   'car-racer': '🏎',
-  'bike-racer': '🏍'
+  'bike-racer': '🏍',
 };
 
 const GAME_TAGS = {
@@ -59,7 +64,7 @@ const GAME_TAGS = {
   'aim-master': 'Precision clicks',
   'stickman-fight': 'Punch or kick',
   'car-racer': 'Dodge the traffic',
-  'bike-racer': 'Balance & lean'
+  'bike-racer': 'Balance & lean',
 };
 
 const FEATURES = [
@@ -72,120 +77,979 @@ const FEATURES = [
   { icon: '🌙', text: 'Glassmorphism & animated theme' },
 ];
 
+const QUIZ_QUESTIONS = [
+  { question: 'What is 2 + 2?', answer: '4' },
+  { question: 'What color is the sky on a clear day?', answer: 'blue' },
+  { question: 'How many days are in a week?', answer: '7' },
+  { question: 'What is the capital of France?', answer: 'paris' },
+  { question: 'Which planet is the largest?', answer: 'jupiter' },
+  { question: 'How many legs does a spider have?', answer: '8' },
+  { question: 'What is 10 x 3?', answer: '30' },
+  { question: 'What do bees make?', answer: 'honey' },
+];
+const pickQuestion = () => QUIZ_QUESTIONS[Math.floor(Math.random() * QUIZ_QUESTIONS.length)];
+
+const MEMOJI_ALPHABET = ['😀', '😎', '🎮', '🚀', '⭐', '🎯', '🎪', '🎨'];
+
+const COLOR_WORDS = [
+  { name: 'RED', hex: '#ef4444' },
+  { name: 'BLUE', hex: '#3b82f6' },
+  { name: 'GREEN', hex: '#22c55e' },
+  { name: 'YELLOW', hex: '#eab308' },
+  { name: 'PURPLE', hex: '#a855f7' },
+  { name: 'ORANGE', hex: '#f97316' },
+];
+
+const RPS_EMOJI = { rock: '🪨', paper: '📄', scissors: '✂️' };
+
+/* ============================================================
+   SHARED SMALL COMPONENTS
+   ============================================================ */
+function GameShell({ emoji, name, tag, children }) {
+  return (
+    <div className="game-card">
+      <div className="game-title-row">
+        <span className="icon">{emoji}</span>
+        <h3>{name}</h3>
+        <span className="tag">{tag}</span>
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function TimerBar({ seconds, runId }) {
+  const [left, setLeft] = useState(seconds);
+  useEffect(() => {
+    setLeft(seconds);
+    const started = Date.now();
+    const iv = setInterval(() => {
+      setLeft(Math.max(0, seconds - (Date.now() - started) / 1000));
+    }, 100);
+    return () => clearInterval(iv);
+  }, [seconds, runId]);
+  const pct = seconds > 0 ? Math.max(0, (left / seconds) * 100) : 0;
+  return (
+    <div style={{ width: '100%', height: 10, borderRadius: 999, background: 'var(--bg-surface-2, rgba(0,0,0,0.08))', overflow: 'hidden', margin: '10px 0' }}>
+      <div style={{ width: pct + '%', height: '100%', borderRadius: 999, background: 'linear-gradient(90deg,#f43f5e,#fbbf24)', transition: 'width 0.1s linear' }} />
+    </div>
+  );
+}
+
+function WaitingForOpponent({ show }) {
+  if (!show) return null;
+  return <div style={{ textAlign: 'center', color: 'var(--ink-secondary)', fontSize: '0.9rem', marginTop: 10 }}>⏳ Waiting for opponent…</div>;
+}
+
+/* ============================================================
+   GAME: TAP WAR — most taps in 5 seconds wins the round
+   ============================================================ */
+function TapWarGame({ onResult, round }) {
+  const [taps, setTaps] = useState(0);
+  const [phase, setPhase] = useState('ready');
+  const tapsRef = useRef(0);
+  const doneRef = useRef(false);
+  const submitRef = useRef(null);
+  useEffect(() => {
+    tapsRef.current = 0; doneRef.current = false;
+    setTaps(0); setPhase('ready');
+  }, [round]);
+  useEffect(() => {
+    submitRef.current = () => {
+      if (doneRef.current) return;
+      doneRef.current = true;
+      setPhase('done');
+      onResult(tapsRef.current);
+    };
+  }, [onResult]);
+  const tap = () => {
+    if (doneRef.current) return;
+    if (phase === 'ready') {
+      setPhase('running');
+      const startedAt = Date.now();
+      const iv = setInterval(() => {
+        const left = 5 - (Date.now() - startedAt) / 1000;
+        if (left <= 0) { clearInterval(iv); if (submitRef.current) submitRef.current(); }
+      }, 100);
+    }
+    tapsRef.current += 1;
+    setTaps(tapsRef.current);
+  };
+  return (
+    <GameShell emoji="👆" name="Tap War" tag={'Round ' + round}>
+      <p style={{ textAlign: 'center', color: 'var(--ink-secondary)', margin: '6px 0' }}>
+        {phase === 'ready' ? 'Tap to start — most taps in 5 seconds wins!' : phase === 'running' ? 'GO GO GO!' : '✅ Sent! Waiting for opponent…'}
+      </p>
+      <div style={{ fontSize: '3rem', fontWeight: 900, textAlign: 'center' }}>{taps}</div>
+      {phase === 'running' && <TimerBar seconds={5} runId={round} />}
+      <button className="btn btn-primary btn-lg" style={{ width: '100%', marginTop: 10 }} onClick={tap} disabled={phase === 'done'}>
+        {phase === 'done' ? '✅ Sent!' : '👆 TAP!'}
+      </button>
+    </GameShell>
+  );
+}
+
+/* ============================================================
+   GAME: QUICK QUIZ — type the answer; correct + faster wins
+   ============================================================ */
+function QuickQuizGame({ onResult, round, question }) {
+  const [q, setQ] = useState(pickQuestion);
+  const [answer, setAnswer] = useState('');
+  const [done, setDone] = useState(false);
+  const answerRef = useRef('');
+  const doneRef = useRef(false);
+  const submitRef = useRef(null);
+  useEffect(() => {
+    doneRef.current = false;
+    setDone(false); setAnswer(''); answerRef.current = '';
+    setQ(question ? { question, answer: '' } : pickQuestion());
+  }, [round, question]);
+  useEffect(() => {
+    submitRef.current = () => {
+      if (doneRef.current) return;
+      doneRef.current = true;
+      setDone(true);
+      onResult(answerRef.current.trim().toLowerCase());
+    };
+  }, [onResult]);
+  const submit = () => { if (!done && answerRef.current.trim() && submitRef.current) submitRef.current(); };
+  return (
+    <GameShell emoji="🧠" name="Quick Quiz" tag={'Round ' + round}>
+      <div style={{ padding: 12, borderRadius: 10, background: 'var(--bg-surface-2, rgba(0,0,0,0.05))', marginBottom: 12 }}>
+        <p style={{ fontWeight: 700, margin: 0 }}>{q.question}</p>
+      </div>
+      <div className="input-group" style={{ marginBottom: 12 }}>
+        <input
+          className="input"
+          placeholder="Type your answer…"
+          value={answer}
+          disabled={done}
+          onChange={e => { setAnswer(e.target.value); answerRef.current = e.target.value; }}
+          onKeyDown={e => e.key === 'Enter' && submit()}
+        />
+        <button className="btn btn-primary" onClick={submit} disabled={done || !answer.trim()}>Submit</button>
+      </div>
+      {done && <div style={{ color: 'var(--success)', fontWeight: 800, textAlign: 'center' }}>✅ Answer sent!</div>}
+    </GameShell>
+  );
+}
+
+/* ============================================================
+   GAME: EMOJI MEMORY — memorize the sequence, rebuild it.
+   Score = number of positions recalled correctly.
+   ============================================================ */
+function EmojiMemoryGame({ sequence, onResult, round }) {
+  const [seq, setSeq] = useState([]);
+  const [showing, setShowing] = useState(true);
+  const [picked, setPicked] = useState([]);
+  const [done, setDone] = useState(false);
+  const pickedRef = useRef([]);
+  const doneRef = useRef(false);
+  const submitRef = useRef(null);
+  useEffect(() => {
+    doneRef.current = false;
+    const emojis = (sequence && sequence.length >= 3) ? sequence
+      : Array.from({ length: 5 }, () => MEMOJI_ALPHABET[Math.floor(Math.random() * MEMOJI_ALPHABET.length)]);
+    setSeq(emojis);
+    setShowing(true);
+    setPicked([]); pickedRef.current = [];
+    setDone(false);
+    const t = setTimeout(() => setShowing(false), 3500);
+    return () => clearTimeout(t);
+  }, [round, sequence]);
+  useEffect(() => {
+    submitRef.current = () => {
+      if (doneRef.current) return;
+      doneRef.current = true;
+      setDone(true);
+      const correct = seq.reduce((acc, emoji, idx) => acc + (pickedRef.current[idx] === emoji ? 1 : 0), 0);
+      onResult(correct);
+    };
+  }, [onResult, seq]);
+  const pick = (emoji) => {
+    if (doneRef.current || showing) return;
+    const next = [...pickedRef.current, emoji].slice(0, seq.length);
+    pickedRef.current = next;
+    setPicked(next);
+    if (next.length >= seq.length && submitRef.current) submitRef.current();
+  };
+  const score = seq.reduce((acc, emoji, idx) => acc + (picked[idx] === emoji ? 1 : 0), 0);
+  return (
+    <GameShell emoji="🧩" name="Emoji Memory" tag={'Round ' + round}>
+      {showing ? (
+        <div style={{ textAlign: 'center', padding: '18px 0' }}>
+          <p style={{ color: 'var(--ink-secondary)' }}>Memorize this sequence…</p>
+          <div style={{ fontSize: '2.2rem', letterSpacing: 8 }}>{seq.join(' ')}</div>
+        </div>
+      ) : (
+        <div style={{ textAlign: 'center' }}>
+          <p style={{ color: 'var(--ink-secondary)', margin: '6px 0' }}>Now rebuild it in order ({picked.length}/{seq.length})</p>
+          <div style={{ fontSize: '1.6rem', minHeight: 40, letterSpacing: 6, marginBottom: 10 }}>
+            {picked.join(' ') || '· · · · ·'}
+          </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, justifyContent: 'center' }}>
+            {MEMOJI_ALPHABET.map(e => (
+              <button key={e} className="btn btn-secondary" style={{ fontSize: '1.4rem', padding: '6px 12px' }} onClick={() => pick(e)} disabled={done}>{e}</button>
+            ))}
+          </div>
+        </div>
+      )}
+      {done
+        ? <div style={{ color: 'var(--success)', fontWeight: 800, textAlign: 'center', marginTop: 10 }}>✅ Sent! You got {score}/{seq.length}</div>
+        : (!showing && <button className="btn btn-secondary" style={{ width: '100%', marginTop: 10 }} onClick={() => submitRef.current && submitRef.current()}>Submit as is</button>)}
+    </GameShell>
+  );
+}
+
+/* ============================================================
+   GAME: TYPING SPEED — type the text exactly; WPM wins
+   ============================================================ */
+function TypingSpeedGame({ text, onResult, round }) {
+  const target = text || 'The quick brown fox jumps over the lazy dog.';
+  const [input, setInput] = useState('');
+  const [done, setDone] = useState(false);
+  const startedRef = useRef(null);
+  const inputRef = useRef('');
+  const doneRef = useRef(false);
+  const submitRef = useRef(null);
+  useEffect(() => {
+    doneRef.current = false;
+    setInput(''); inputRef.current = ''; startedRef.current = null; setDone(false);
+  }, [round, target]);
+  useEffect(() => {
+    submitRef.current = () => {
+      if (doneRef.current) return;
+      doneRef.current = true;
+      setDone(true);
+      const secs = startedRef.current ? Math.max(1, (Date.now() - startedRef.current) / 1000) : 30;
+      const words = inputRef.current.trim().split(/\s+/).filter(Boolean).length;
+      onResult(Math.round((words / secs) * 60));
+    };
+  }, [onResult]);
+  const onChange = (e) => {
+    if (doneRef.current) return;
+    if (startedRef.current === null) startedRef.current = Date.now();
+    const v = e.target.value;
+    setInput(v); inputRef.current = v;
+    if (v === target && submitRef.current) submitRef.current();
+  };
+  return (
+    <GameShell emoji="⌨️" name="Typing Speed" tag={'Round ' + round}>
+      <div style={{ padding: 10, borderRadius: 10, background: 'var(--bg-surface-2, rgba(0,0,0,0.05))', fontStyle: 'italic', color: 'var(--ink-secondary)', whiteSpace: 'pre-wrap', marginBottom: 10 }}>{target}</div>
+      <textarea
+        className="input"
+        placeholder="Start typing…"
+        value={input}
+        onChange={onChange}
+        disabled={done}
+        rows={3}
+        style={{ fontFamily: 'var(--font-mono, monospace)', fontSize: '1rem', width: '100%' }}
+      />
+      {done && <div style={{ color: 'var(--success)', fontWeight: 800, textAlign: 'center', marginTop: 8 }}>✅ Done! WPM sent.</div>}
+    </GameShell>
+  );
+}
+
+/* ============================================================
+   GAME: REACTION TIME — click the instant it turns green.
+   Early click = 3000ms penalty. Lower ms wins.
+   ============================================================ */
+function ReactionTimeGame({ onResult, round }) {
+  const [phase, setPhase] = useState('waiting');
+  const [ms, setMs] = useState(null);
+  const shownAtRef = useRef(0);
+  const msRef = useRef(9999);
+  const doneRef = useRef(false);
+  const submitRef = useRef(null);
+  useEffect(() => {
+    doneRef.current = false;
+    setPhase('waiting'); setMs(null); msRef.current = 9999;
+    const t = setTimeout(() => {
+      shownAtRef.current = Date.now();
+      setPhase('green');
+    }, 1500 + Math.random() * 3500);
+    return () => clearTimeout(t);
+  }, [round]);
+  useEffect(() => {
+    submitRef.current = () => {
+      if (doneRef.current) return;
+      doneRef.current = true;
+      setPhase('done');
+      onResult(msRef.current);
+    };
+  }, [onResult]);
+  const click = () => {
+    if (doneRef.current) return;
+    if (phase === 'waiting' || phase === 'early') {
+      setPhase('early');
+      msRef.current = 3000;
+      if (submitRef.current) submitRef.current();
+    } else if (phase === 'green') {
+      const d = Date.now() - shownAtRef.current;
+      msRef.current = d;
+      setMs(d);
+      if (submitRef.current) submitRef.current();
+    }
+  };
+  const bg = phase === 'green' ? '#22c55e' : phase === 'early' ? '#f43f5e' : 'var(--bg-surface-2, rgba(0,0,0,0.06))';
+  const fg = phase === 'green' ? '#fff' : phase === 'early' ? '#fff' : 'var(--ink-secondary, #888)';
+  return (
+    <GameShell emoji="⚡" name="Reaction Time" tag={'Round ' + round}>
+      <div
+        onClick={click}
+        style={{ height: 170, borderRadius: 14, background: bg, color: fg, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: '1.2rem', textAlign: 'center', transition: 'background 0.15s', cursor: 'pointer' }}
+      >
+        {phase === 'waiting' && <span>Wait for GREEN…<br /><span style={{ fontSize: '0.85rem', fontWeight: 400 }}>clicking early = penalty</span></span>}
+        {phase === 'green' && <span style={{ fontSize: '2rem' }}>CLICK NOW!</span>}
+        {phase === 'early' && <span>😮 Too early! 3s penalty</span>}
+        {phase === 'done' && <span>✅ Sent: {ms === 3000 ? 'penalty' : ms + ' ms'}</span>}
+      </div>
+    </GameShell>
+  );
+}
+
+/* ============================================================
+   GAME: MATH BLITZ — solve as many problems as you can in 10s
+   ============================================================ */
+function MathBlitzGame({ onResult, round }) {
+  const [problem, setProblem] = useState(null);
+  const [answer, setAnswer] = useState('');
+  const [hits, setHits] = useState(0);
+  const [phase, setPhase] = useState('ready');
+  const hitsRef = useRef(0);
+  const doneRef = useRef(false);
+  const submitRef = useRef(null);
+  const makeProblem = () => {
+    const a = 2 + Math.floor(Math.random() * 12);
+    const b = 2 + Math.floor(Math.random() * 12);
+    const ops = ['+', '-', 'x'];
+    const op = ops[Math.floor(Math.random() * ops.length)];
+    const result = op === '+' ? a + b : op === '-' ? a - b : a * b;
+    return { text: a + ' ' + op + ' ' + b, result };
+  };
+  useEffect(() => {
+    doneRef.current = false;
+    hitsRef.current = 0;
+    setHits(0); setAnswer(''); setProblem(null); setPhase('ready');
+  }, [round]);
+  useEffect(() => {
+    submitRef.current = () => {
+      if (doneRef.current) return;
+      doneRef.current = true;
+      setPhase('done');
+      onResult(hitsRef.current);
+    };
+  }, [onResult]);
+  const start = () => {
+    if (phase !== 'ready') return;
+    setPhase('running');
+    setProblem(makeProblem());
+    const startedAt = Date.now();
+    const iv = setInterval(() => {
+      const left = 10 - (Date.now() - startedAt) / 1000;
+      if (left <= 0) { clearInterval(iv); if (submitRef.current) submitRef.current(); }
+    }, 100);
+  };
+  const submitAnswer = () => {
+    if (doneRef.current || phase !== 'running' || !problem) return;
+    if (Number(answer) === problem.result) {
+      hitsRef.current += 1;
+      setHits(hitsRef.current);
+    }
+    setAnswer('');
+    setProblem(makeProblem());
+  };
+  return (
+    <GameShell emoji="🔢" name="Math Blitz" tag={'Round ' + round}>
+      <p style={{ textAlign: 'center', color: 'var(--ink-secondary)', margin: '6px 0' }}>
+        {phase === 'ready' ? 'Solve as many as you can in 10 seconds!' : phase === 'running' ? 'Solve!' : '✅ Sent!'}
+      </p>
+      {phase === 'running' && <TimerBar seconds={10} runId={round} />}
+      {phase === 'running' && problem && (
+        <div style={{ textAlign: 'center', margin: '8px 0' }}>
+          <div style={{ fontSize: '2rem', fontWeight: 900, marginBottom: 8 }}>{problem.text} = ?</div>
+          <div className="input-group" style={{ maxWidth: 260, margin: '0 auto' }}>
+            <input
+              className="input"
+              inputMode="numeric"
+              value={answer}
+              autoFocus
+              onChange={e => setAnswer(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && submitAnswer()}
+            />
+            <button className="btn btn-primary" onClick={submitAnswer}>OK</button>
+          </div>
+          <div style={{ marginTop: 8, fontWeight: 800 }}>Correct: {hits}</div>
+        </div>
+      )}
+      {phase === 'ready' && (
+        <button className="btn btn-primary btn-lg" style={{ width: '100%' }} onClick={start}>▶ Start</button>
+      )}
+    </GameShell>
+  );
+}
+
+/* ============================================================
+   GAME: COLOR RUSH — click when the INK matches the WORD.
+   Score = correct hits, faster = better tie-break.
+   ============================================================ */
+function ColorRushGame({ onResult, round }) {
+  const [roundData, setRoundData] = useState(null);
+  const [hits, setHits] = useState(0);
+  const [misses, setMisses] = useState(0);
+  const [phase, setPhase] = useState('ready');
+  const statsRef = useRef({ hits: 0, misses: 0 });
+  const doneRef = useRef(false);
+  const submitRef = useRef(null);
+  const makeRound = () => {
+    const match = Math.random() < 0.5;
+    const word = COLOR_WORDS[Math.floor(Math.random() * COLOR_WORDS.length)];
+    let ink = word;
+    if (!match) {
+      do { ink = COLOR_WORDS[Math.floor(Math.random() * COLOR_WORDS.length)]; } while (ink.name === word.name);
+    }
+    return { word, ink, match };
+  };
+  useEffect(() => {
+    doneRef.current = false;
+    statsRef.current = { hits: 0, misses: 0 };
+    setHits(0); setMisses(0); setRoundData(null); setPhase('ready');
+  }, [round]);
+  useEffect(() => {
+    submitRef.current = () => {
+      if (doneRef.current) return;
+      doneRef.current = true;
+      setPhase('done');
+      onResult(statsRef.current.hits);
+    };
+  }, [onResult]);
+  const start = () => {
+    if (phase !== 'ready') return;
+    setPhase('running');
+    setRoundData(makeRound());
+    const startedAt = Date.now();
+    const iv = setInterval(() => {
+      const left = 10 - (Date.now() - startedAt) / 1000;
+      if (left <= 0) { clearInterval(iv); if (submitRef.current) submitRef.current(); }
+    }, 100);
+  };
+  const answer = (saidYes) => {
+    if (doneRef.current || phase !== 'running' || !roundData) return;
+    if (saidYes === roundData.match) {
+      statsRef.current.hits += 1;
+      setHits(statsRef.current.hits);
+    } else {
+      statsRef.current.misses += 1;
+      setMisses(statsRef.current.misses);
+    }
+    setRoundData(makeRound());
+  };
+  return (
+    <GameShell emoji="🎨" name="Color Rush" tag={'Round ' + round}>
+      <p style={{ textAlign: 'center', color: 'var(--ink-secondary)', margin: '6px 0' }}>
+        Does the COLOR match the WORD? Yes = ✓, No = ✗
+      </p>
+      {phase === 'running' && <TimerBar seconds={10} runId={round} />}
+      {phase === 'running' && roundData && (
+        <div style={{ textAlign: 'center' }}>
+          <div style={{ fontSize: '3rem', fontWeight: 900, margin: '10px 0', color: roundData.ink.hex, fontFamily: 'var(--font-head, sans-serif)' }}>
+            {roundData.word.name}
+          </div>
+          <div style={{ display: 'flex', gap: 12, justifyContent: 'center' }}>
+            <button className="btn btn-success btn-lg" onClick={() => answer(true)}>✓ Match</button>
+            <button className="btn btn-danger btn-lg" onClick={() => answer(false)}>✗ No match</button>
+          </div>
+          <div style={{ marginTop: 10, fontWeight: 800 }}>✅ {hits} · ❌ {misses}</div>
+        </div>
+      )}
+      {phase === 'ready' && (
+        <button className="btn btn-primary btn-lg" style={{ width: '100%' }} onClick={start}>▶ Start</button>
+      )}
+    </GameShell>
+  );
+}
+
+/* ============================================================
+   GAME: AIM MASTER — targets appear, tap them fast.
+   Score = targets hit in 10s.
+   ============================================================ */
+function AimMasterGame({ onResult, round }) {
+  const [targets, setTargets] = useState([]);
+  const [hits, setHits] = useState(0);
+  const [phase, setPhase] = useState('ready');
+  const hitsRef = useRef(0);
+  const doneRef = useRef(false);
+  const idRef = useRef(0);
+  const submitRef = useRef(null);
+  useEffect(() => {
+    doneRef.current = false;
+    hitsRef.current = 0;
+    setHits(0); setTargets([]); setPhase('ready');
+  }, [round]);
+  useEffect(() => {
+    submitRef.current = () => {
+      if (doneRef.current) return;
+      doneRef.current = true;
+      setPhase('done');
+      onResult(hitsRef.current);
+    };
+  }, [onResult]);
+  const spawn = () => ({
+    id: ++idRef.current,
+    x: 12 + Math.random() * 76,
+    y: 12 + Math.random() * 76,
+    size: 34 + Math.random() * 22,
+  });
+  const start = () => {
+    if (phase !== 'ready') return;
+    setPhase('running');
+    setTargets([spawn()]);
+    const startedAt = Date.now();
+    const iv = setInterval(() => {
+      const left = 10 - (Date.now() - startedAt) / 1000;
+      if (left <= 0) { clearInterval(iv); setTargets([]); if (submitRef.current) submitRef.current(); }
+    }, 100);
+  };
+  const hit = (id) => {
+    if (doneRef.current || phase !== 'running') return;
+    hitsRef.current += 1;
+    setHits(hitsRef.current);
+    setTargets([spawn()]);
+  };
+  return (
+    <GameShell emoji="🎯" name="Aim Master" tag={'Round ' + round}>
+      <p style={{ textAlign: 'center', color: 'var(--ink-secondary)', margin: '6px 0' }}>
+        {phase === 'ready' ? 'Tap the targets as fast as you can for 10 seconds!' : phase === 'running' ? 'Fire!' : '✅ Sent!'}
+      </p>
+      {phase === 'running' && <TimerBar seconds={10} runId={round} />}
+      {phase === 'running' && (
+        <div style={{ position: 'relative', height: 260, borderRadius: 14, background: 'var(--bg-surface-2, rgba(0,0,0,0.05))', overflow: 'hidden' }}>
+          {targets.map(t => (
+            <button
+              key={t.id}
+              onClick={() => hit(t.id)}
+              style={{
+                position: 'absolute', left: t.x + '%', top: t.y + '%',
+                width: t.size, height: t.size, borderRadius: '50%',
+                border: 'none', cursor: 'crosshair',
+                background: 'radial-gradient(circle at 35% 35%, #fda4af, #f43f5e 70%)',
+                boxShadow: '0 4px 14px rgba(244,63,94,0.45)',
+                transform: 'translate(-50%, -50%)',
+              }}
+              aria-label="target"
+            />
+          ))}
+          <div style={{ position: 'absolute', top: 8, right: 12, fontWeight: 900, fontSize: '1.1rem' }}>{hits} 🎯</div>
+        </div>
+      )}
+      {phase === 'ready' && (
+        <button className="btn btn-primary btn-lg" style={{ width: '100%' }} onClick={start}>▶ Start</button>
+      )}
+    </GameShell>
+  );
+}
+
+/* ============================================================
+   GAME: STICKMAN FIGHT — tap punch/kick for 8s; more hits wins
+   ============================================================ */
+function StickmanFightGame({ onResult, round }) {
+  const [punches, setPunches] = useState(0);
+  const [kicks, setKicks] = useState(0);
+  const [phase, setPhase] = useState('ready');
+  const statsRef = useRef({ p: 0, k: 0 });
+  const doneRef = useRef(false);
+  const submitRef = useRef(null);
+  useEffect(() => {
+    doneRef.current = false;
+    statsRef.current = { p: 0, k: 0 };
+    setPunches(0); setKicks(0); setPhase('ready');
+  }, [round]);
+  useEffect(() => {
+    submitRef.current = () => {
+      if (doneRef.current) return;
+      doneRef.current = true;
+      setPhase('done');
+      onResult(statsRef.current.p + statsRef.current.k);
+    };
+  }, [onResult]);
+  const start = () => {
+    if (phase !== 'ready') return;
+    setPhase('running');
+    const startedAt = Date.now();
+    const iv = setInterval(() => {
+      const left = 8 - (Date.now() - startedAt) / 1000;
+      if (left <= 0) { clearInterval(iv); if (submitRef.current) submitRef.current(); }
+    }, 100);
+  };
+  const addPunch = () => { if (phase === 'running') { statsRef.current.p += 1; setPunches(statsRef.current.p); } };
+  const addKick = () => { if (phase === 'running') { statsRef.current.k += 1; setKicks(statsRef.current.k); } };
+  return (
+    <GameShell emoji="🧍" name="Stickman Fight" tag={'Round ' + round}>
+      <p style={{ textAlign: 'center', color: 'var(--ink-secondary)', margin: '6px 0' }}>
+        {phase === 'ready' ? 'Mash punch & kick for 8 seconds!' : phase === 'running' ? 'FIGHT!' : '✅ Sent!'}
+      </p>
+      {phase === 'running' && <TimerBar seconds={8} runId={round} />}
+      {phase === 'running' && (
+        <div style={{ textAlign: 'center' }}>
+          <div style={{ fontSize: '3.2rem', margin: '6px 0' }}>🧍💥🥊</div>
+          <div style={{ display: 'flex', gap: 12, justifyContent: 'center' }}>
+            <button className="btn btn-primary btn-lg" onClick={addPunch}>🥊 Punch ({punches})</button>
+            <button className="btn btn-danger btn-lg" onClick={addKick}>🦶 Kick ({kicks})</button>
+          </div>
+          <div style={{ marginTop: 10, fontWeight: 800 }}>Total: {punches + kicks}</div>
+        </div>
+      )}
+      {phase === 'ready' && (
+        <button className="btn btn-primary btn-lg" style={{ width: '100%' }} onClick={start}>▶ Start</button>
+      )}
+    </GameShell>
+  );
+}
+
+/* ============================================================
+   GAME: CAR RACER — dodge traffic: switch lanes, survive.
+   Score = meters survived. Crash ends your run.
+   ============================================================ */
+function CarRacerGame({ onResult, round }) {
+  const [lane, setLane] = useState(1);
+  const [obstacles, setObstacles] = useState([]);
+  const [meters, setMeters] = useState(0);
+  const [phase, setPhase] = useState('ready');
+  const laneRef = useRef(1);
+  const obstaclesRef = useRef([]);
+  const metersRef = useRef(0);
+  const doneRef = useRef(false);
+  const idRef = useRef(0);
+  const submitRef = useRef(null);
+  useEffect(() => {
+    doneRef.current = false;
+    laneRef.current = 1; obstaclesRef.current = []; metersRef.current = 0;
+    setLane(1); setObstacles([]); setMeters(0); setPhase('ready');
+  }, [round]);
+  useEffect(() => {
+    submitRef.current = () => {
+      if (doneRef.current) return;
+      doneRef.current = true;
+      setPhase('done');
+      onResult(Math.round(metersRef.current));
+    };
+  }, [onResult]);
+  const crash = () => { if (submitRef.current) submitRef.current(); };
+  const start = () => {
+    if (phase !== 'ready') return;
+    setPhase('running');
+    const spawnIv = setInterval(() => {
+      if (doneRef.current) { clearInterval(spawnIv); return; }
+      const o = { id: ++idRef.current, lane: Math.floor(Math.random() * 3), y: -8 };
+      obstaclesRef.current.push(o);
+    }, 650);
+    const tickIv = setInterval(() => {
+      if (doneRef.current) { clearInterval(tickIv); clearInterval(spawnIv); return; }
+      metersRef.current += 1.6;
+      setMeters(metersRef.current);
+      const next = [];
+      for (const o of obstaclesRef.current) {
+        const y = o.y + 5;
+        if (y > 120) continue;
+        if (y > 74 && y < 96 && o.lane === laneRef.current) {
+          clearInterval(tickIv); clearInterval(spawnIv);
+          crash();
+          return;
+        }
+        next.push({ ...o, y });
+      }
+      obstaclesRef.current = next;
+      setObstacles(next);
+    }, 60);
+  };
+  const move = (dir) => {
+    if (phase !== 'running') return;
+    const n = Math.max(0, Math.min(2, laneRef.current + dir));
+    laneRef.current = n;
+    setLane(n);
+  };
+  const laneX = [22, 50, 78];
+  return (
+    <GameShell emoji="🏎" name="Car Racer" tag={'Round ' + round}>
+      <p style={{ textAlign: 'center', color: 'var(--ink-secondary)', margin: '6px 0' }}>
+        {phase === 'ready' ? 'Dodge the traffic — survive as long as you can!' : phase === 'running' ? '💨 ' + Math.round(meters) + ' m' : '💥 Crashed at ' + Math.round(meters) + ' m!'}
+      </p>
+      {phase !== 'ready' && (
+        <div style={{ position: 'relative', height: 300, borderRadius: 14, overflow: 'hidden', background: 'linear-gradient(180deg,#334155,#1e293b)' }}>
+          {[22, 50, 78].map(x => (
+            <div key={x} style={{ position: 'absolute', left: x + '%', top: 0, bottom: 0, width: 2, background: 'rgba(255,255,255,0.15)', transform: 'translateX(-50%)' }} />
+          ))}
+          {obstacles.map(o => (
+            <div key={o.id} style={{ position: 'absolute', left: laneX[o.lane] + '%', top: o.y + '%', width: 34, height: 52, borderRadius: 8, transform: 'translate(-50%,-50%)', background: 'linear-gradient(180deg,#f59e0b,#d97706)', boxShadow: '0 4px 10px rgba(0,0,0,0.4)' }} />
+          ))}
+          <div style={{ position: 'absolute', left: laneX[lane] + '%', bottom: '6%', width: 38, height: 58, borderRadius: 9, transform: 'translateX(-50%)', background: 'linear-gradient(180deg,#60a5fa,#2563eb)', boxShadow: '0 6px 16px rgba(37,99,235,0.5)', transition: 'left 0.12s ease' }} />
+          {phase === 'running' && (
+            <div style={{ position: 'absolute', left: 0, right: 0, bottom: 8, display: 'flex', justifyContent: 'center', gap: 14 }}>
+              <button className="btn btn-secondary btn-lg" onClick={() => move(-1)}>◀</button>
+              <button className="btn btn-secondary btn-lg" onClick={() => move(1)}>▶</button>
+            </div>
+          )}
+        </div>
+      )}
+      {phase === 'ready' && (
+        <button className="btn btn-primary btn-lg" style={{ width: '100%' }} onClick={start}>▶ Start Engine</button>
+      )}
+    </GameShell>
+  );
+}
+
+/* ============================================================
+   GAME: BIKE RACER — hold to lean back and keep the wheelie
+   in the green zone. Score = ms balanced in 10s.
+   ============================================================ */
+function BikeRacerGame({ onResult, round }) {
+  const [angle, setAngle] = useState(50);
+  const [balanced, setBalanced] = useState(0);
+  const [phase, setPhase] = useState('ready');
+  const [holding, setHolding] = useState(false);
+  const angleRef = useRef(50);
+  const balancedRef = useRef(0);
+  const doneRef = useRef(false);
+  const submitRef = useRef(null);
+  useEffect(() => {
+    doneRef.current = false;
+    angleRef.current = 50; balancedRef.current = 0;
+    setAngle(50); setBalanced(0); setPhase('ready'); setHolding(false);
+  }, [round]);
+  useEffect(() => {
+    submitRef.current = () => {
+      if (doneRef.current) return;
+      doneRef.current = true;
+      setPhase('done');
+      onResult(Math.round(balancedRef.current));
+    };
+  }, [onResult]);
+  const start = () => {
+    if (phase !== 'ready') return;
+    setPhase('running');
+    const startedAt = Date.now();
+    const iv = setInterval(() => {
+      if (doneRef.current) { clearInterval(iv); return; }
+      angleRef.current = Math.max(0, Math.min(100, angleRef.current + (holdingRef.current ? 5 : -5)));
+      setAngle(angleRef.current);
+      if (angleRef.current >= 35 && angleRef.current <= 65) {
+        balancedRef.current += 50;
+        setBalanced(balancedRef.current);
+      }
+      const left = 10 - (Date.now() - startedAt) / 1000;
+      if (left <= 0) { clearInterval(iv); if (submitRef.current) submitRef.current(); }
+    }, 50);
+  };
+  const holdingRef = useRef(false);
+  const hold = (v) => {
+    holdingRef.current = v;
+    setHolding(v);
+  };
+  const inZone = angle >= 35 && angle <= 65;
+  return (
+    <GameShell emoji="🏍" name="Bike Racer" tag={'Round ' + round}>
+      <p style={{ textAlign: 'center', color: 'var(--ink-secondary)', margin: '6px 0' }}>
+        {phase === 'ready' ? 'Hold LEAN BACK to wheelie — stay in the green zone!' : phase === 'running' ? 'Balance! ' + (balanced / 1000).toFixed(1) + 's in zone' : '✅ Sent: ' + (balanced / 1000).toFixed(1) + 's'}
+      </p>
+      {phase === 'running' && (
+        <div>
+          <TimerBar seconds={10} runId={round} />
+          <div style={{ position: 'relative', height: 26, borderRadius: 999, background: 'var(--bg-surface-2, rgba(0,0,0,0.08))', margin: '10px 0', overflow: 'hidden' }}>
+            <div style={{ position: 'absolute', left: '35%', width: '30%', top: 0, bottom: 0, background: 'rgba(34,197,94,0.35)' }} />
+            <div style={{ position: 'absolute', left: angle + '%', top: -4, bottom: -4, width: 6, borderRadius: 3, background: inZone ? '#22c55e' : '#f43f5e', transform: 'translateX(-50%)', transition: 'left 0.05s linear' }} />
+          </div>
+          <div style={{ textAlign: 'center', fontSize: '2.6rem', margin: '4px 0' }}>{inZone ? '🏍️💨' : angle > 65 ? '🏍️⬆️' : '🏍️⬇️'}</div>
+          <button
+            className="btn btn-primary btn-lg"
+            style={{ width: '100%', userSelect: 'none', touchAction: 'none' }}
+            onPointerDown={() => hold(true)}
+            onPointerUp={() => hold(false)}
+            onPointerLeave={() => hold(false)}
+          >
+            {holding ? '⬆️ Leaning back…' : '⬆️ Hold to LEAN BACK'}
+          </button>
+        </div>
+      )}
+      {phase === 'ready' && (
+        <button className="btn btn-primary btn-lg" style={{ width: '100%' }} onClick={start}>▶ Start</button>
+      )}
+    </GameShell>
+  );
+}
+
+/* ============================================================
+   CINEMATIC INTRO OVERLAY
+   ============================================================ */
+function IntroOverlay({ onDone }) {
+  useEffect(() => {
+    const t = setTimeout(onDone, 3200);
+    return () => clearTimeout(t);
+  }, [onDone]);
+  return (
+    <div className="intro-overlay">
+      <div className="intro-logo">SHARENPLAY</div>
+      <div className="intro-tag">Share · Play · Dare</div>
+      <div className="intro-ring" />
+      <div className="intro-credit">a <b>RAJKETHA PROJECT</b></div>
+    </div>
+  );
+}
+
+/* ============================================================
+   BRAND FOOTER
+   ============================================================ */
+function BrandFooter() {
+  return (
+    <footer className="brand-footer">
+      <div className="inner">
+        <div className="mark" />
+        <span className="name">Rajketha <b>Project</b></span>
+        <span className="divider" />
+        <span className="sub">File Sharing · Games</span>
+      </div>
+    </footer>
+  );
+}
+
+/* ============================================================
+   MAIN APP
+   ============================================================ */
 function App() {
   const [view, setView] = useState('home');
   const [file, setFile] = useState(null);
+  const [fileInfo, setFileInfo] = useState(null);
   const [code, setCode] = useState('');
   const [dare, setDare] = useState('');
-  const [fileInfo, setFileInfo] = useState(null);
+  const [dareCategories, setDareCategories] = useState([]);
+  const [selectedDareCategory, setSelectedDareCategory] = useState('');
+  const [receiverDareCategory, setReceiverDareCategory] = useState('');
+  const [selectedGame, setSelectedGame] = useState('');
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [error, setError] = useState('');
+
+  const [receiverCode, setReceiverCode] = useState('');
+  const [receiverDare, setReceiverDare] = useState('');
+  const [receiverFileInfo, setReceiverFileInfo] = useState(null);
+  const [receiverError, setReceiverError] = useState('');
+
   const [socket, setSocket] = useState(null);
-  const [dares, setDares] = useState({});
+  const [connectionStatus, setConnectionStatus] = useState('connecting');
+  const [playerType, setPlayerType] = useState('');
+  const [playerRole, setPlayerRole] = useState(null);
+  const [currentGame, setCurrentGame] = useState('');
   const [round, setRound] = useState(1);
+  const [maxRounds, setMaxRounds] = useState(3);
   const [scores, setScores] = useState({ player1: 0, player2: 0 });
   const [gameResult, setGameResult] = useState(null);
   const [gameWinner, setGameWinner] = useState(null);
-  const [action, setAction] = useState('');
-  const [error, setError] = useState('');
-  const [receiverFileInfo, setReceiverFileInfo] = useState(null);
-  const [receiverCode, setReceiverCode] = useState('');
-  const [receiverDare, setReceiverDare] = useState('');
-  const [receiverError, setReceiverError] = useState('');
   const [gameData, setGameData] = useState(null);
-  const [dareCategories, setDareCategories] = useState([]);
-  const [selectedDareCategory, setSelectedDareCategory] = useState('');
-  const [selectedGame, setSelectedGame] = useState('');
+  const [dares, setDares] = useState({});
+  const [action, setAction] = useState('');
   const [waitingHint, setWaitingHint] = useState('');
-  const [connectionStatus, setConnectionStatus] = useState('connecting');
-  const [currentGame, setCurrentGame] = useState('');
-  const [playerType, setPlayerType] = useState('');
-  const [playerRole, setPlayerRole] = useState(null);
+  const [lanHost, setLanHost] = useState('');
+  const [intro, setIntro] = useState(() => !sessionStorage.getItem('snp-intro-seen'));
 
-  /* ------------------------------------------------------------------ */
-  /*  socket connection                                                 */
-  /* ------------------------------------------------------------------ */
+  const viewRef = useRef('home');
+  const playerTypeRef = useRef('');
+  useEffect(() => { viewRef.current = view; }, [view]);
+  useEffect(() => { playerTypeRef.current = playerType; }, [playerType]);
+
+  /* ---------- dare categories (fetch once) ---------- */
   useEffect(() => {
-    const s = io(BACKEND_URL, {
-      transports: ['websocket', 'polling'],
-      timeout: 30000,
-      forceNew: true,
-      reconnection: true,
-      reconnectionAttempts: 5,
-      reconnectionDelay: 1000,
-      reconnectionDelayMax: 5000,
-      maxReconnectionAttempts: 10
-    });
+    axios.get(BACKEND_URL + '/dare-categories')
+      .then(res => setDareCategories(Array.isArray(res.data) ? res.data : []))
+      .catch(() => setDareCategories([]));
+  }, []);
+
+  /* ---------- LAN IP for QR codes ---------- */
+  useEffect(() => {
+    axios.get(BACKEND_URL + '/api/lan-info')
+      .then(res => {
+        // Only use a LAN IP when the user browses over LAN themselves
+        // (public hosts like Hugging Face report container-internal IPs).
+        if (/^(http:\/\/)(192\.168\.|10\.|172\.(1[6-9]|2\d|3[01])\.)/.test(window.location.href)) {
+          const ips = (res.data && res.data.lanIps) || [];
+          const candidates = ips.filter(ip => ip.startsWith('192.168.') || ip.startsWith('10.') || ip.startsWith('172.'));
+          if (candidates.length) setLanHost(candidates[0]);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  /* ---------- deep link: QR opens /?code=XXX&view=receiver ---------- */
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const urlCode = (params.get('code') || '').toUpperCase();
+    if (params.get('view') === 'receiver' && /^[A-Z0-9]{6}$/.test(urlCode)) {
+      setReceiverCode(urlCode);
+      setView('receiver');
+    }
+  }, []);
+
+  /* ---------- socket connection + all server events ---------- */
+  useEffect(() => {
+    const s = io(BACKEND_URL, { transports: ['websocket', 'polling'], reconnection: true, reconnectionAttempts: 5 });
     setSocket(s);
-    s.on('connect', () => {
-      setConnectionStatus('connected');
-      setError('');
-    });
-    s.on('connect_error', (err) => {
-      setConnectionStatus('error');
-      setError('Connection failed: ' + err.message);
-    });
+    s.on('connect', () => setConnectionStatus('connected'));
+    s.on('connect_error', () => setConnectionStatus('error'));
     s.on('disconnect', () => setConnectionStatus('disconnected'));
-    s.on('reconnect', (n) => { setConnectionStatus('connected'); setError(''); });
-    s.on('reconnect_error', () => setConnectionStatus('error'));
-    s.on('reconnect_failed', () => {
-      setConnectionStatus('error');
-      setError('Failed to reconnect to server');
+    s.on('error', (err) => {
+      setError((err && err.message) || 'Game error occurred');
+      if (viewRef.current === 'waiting') setView(playerTypeRef.current === 'receiver' ? 'receiver' : 'sender');
     });
-    s.on('playerJoined', ({ playerType, dare }) => {});
-    s.on('gameCreated', ({ roomCode, gameType }) => {});
-    s.on('gameJoined', ({ roomCode, gameType }) => {});
-    s.on('error', (err) => setError(err.message || 'Game error occurred'));
-    s.on('gameStart', ({ gameType, round, maxRounds, playerMap, gameData, dares }) => {
+    s.on('gameCreated', () => {});
+    s.on('gameJoined', () => {});
+    s.on('gameStart', ({ gameType, round: r, maxRounds: mr, playerMap, gameData: gd }) => {
       setCurrentGame(gameType);
-      setDares(dares || {});
-      setRound(round || 1);
-      setView('game');
+      setRound(r || 1);
+      setMaxRounds(mr || 3);
+      setGameData(gd || null);
       setScores({ player1: 0, player2: 0 });
       setAction('');
       setGameResult(null);
       setGameWinner(null);
-      setGameData(gameData);
-      setFileInfo(prev => prev ? { ...prev, gameSuggestion: { game: gameType } } : { gameSuggestion: { game: gameType } });
+      setError('');
+      setPlayerRole(playerMap && playerMap.player1 === s.id ? 'player1' : 'player2');
+      setView('game');
     });
-    s.on('roundResult', ({ result, scores, round, playerMap }) => {
-      if (!result || !scores || !round) { setGameResult(null); return; }
+    s.on('roundResult', ({ result, scores: sc, round: r }) => {
+      if (!result || !sc) { setGameResult(null); return; }
       setGameResult(result);
-      setScores(scores);
-      setRound(round);
-      setPlayerMap(playerMap);
+      setScores(sc);
+      if (r) setRound(r);
     });
-    s.on('gameEnd', ({ winner, finalScores, scores, dares }) => {
-      setGameWinner({ winner, finalScores, scores, dares });
-      setView('end');
-    });
-    s.on('nextRound', ({ round, gameData }) => {
-      setRound(round);
-      setGameData(gameData);
+    s.on('nextRound', ({ round: r, gameData: gd }) => {
+      setRound(r);
+      setGameData(gd || null);
       setAction('');
       setGameResult(null);
-      setGameResult(null);
+    });
+    s.on('gameEnd', ({ winner, finalScores, dares: dz }) => {
+      setGameWinner({ winner, finalScores, dares: dz || {} });
+      setView('end');
     });
     return () => s.disconnect();
   }, []);
 
+  /* ---------- waiting hint ---------- */
   useEffect(() => {
-    if (view === 'waiting') {
-      setWaitingHint('');
-      const t = setTimeout(() => {
-        setWaitingHint('Still waiting? Make sure both players joined with the same code and entered a dare.');
-      }, 7000);
-      return () => clearTimeout(t);
-    }
+    if (view !== 'waiting') return;
+    setWaitingHint('');
+    const t = setTimeout(() => setWaitingHint('Still waiting? The sender must tap "Join Game" on the PC first.'), 7000);
+    return () => clearTimeout(t);
   }, [view]);
 
+  /* ---------- confetti when you win ---------- */
   useEffect(() => {
-    if (view === 'end' && gameWinner && gameWinner.winner === playerType && gameWinner.winner !== 'tie') {
-      confetti({ particleCount: 140, spread: 90, origin: { y: 0.6 }, colors: ['#f43f5e', '#fbbf24', '#3b82f6', '#10b981'] });
+    if (view === 'end' && gameWinner && gameWinner.winner === playerRole && gameWinner.winner !== 'tie') {
+      confetti({ particleCount: 140, spread: 90, origin: { y: 0.6 } });
     }
-  }, [view, gameWinner, playerType]);
+  }, [view, gameWinner, playerRole]);
 
-  /* ------------------------------------------------------------------ */
-  /*  file actions                                                    */
-  /* ------------------------------------------------------------------ */
+  /* ---------- helpers ---------- */
+  const fmtSize = (n) => n >= 1024 * 1024 ? (n / (1024 * 1024)).toFixed(2) + ' MB' : (n / 1024).toFixed(1) + ' KB';
+
   const handleUpload = async () => {
     if (!file) return;
     setIsUploading(true);
@@ -194,14 +1058,13 @@ function App() {
     const form = new FormData();
     form.append('file', file);
     try {
-      const res = await axios.post(`${BACKEND_URL}/upload`, form, {
-        onUploadProgress: (e) => { if (e.total) setUploadProgress(Math.round((e.loaded / e.total) * 100)); }
+      const res = await axios.post(BACKEND_URL + '/upload', form, {
+        onUploadProgress: (e) => { if (e.total) setUploadProgress(Math.round((e.loaded / e.total) * 100)); },
       });
+      setFileInfo(res.data);
       setCode(res.data.code);
-      setFileInfo({ fileName: res.data.fileName, mimetype: res.data.mimetype, size: res.data.size });
-      setView('sender');
     } catch (err) {
-      setError(err.response?.data?.error || (err.code === 'ERR_NETWORK' ? 'Upload failed — is the server running?' : 'Upload failed. Please try again.'));
+      setError(err.response && err.response.data && err.response.data.error ? err.response.data.error : 'Upload failed — is the server running?');
     } finally {
       setIsUploading(false);
       setUploadProgress(0);
@@ -209,96 +1072,115 @@ function App() {
   };
 
   const handleJoinAsSender = () => {
-    socket.emit('joinRoom', { code, playerType: 'sender', dare, selectedGame });
+    if (!code || !dare) return;
+    setError('');
+    socket.emit('joinRoom', { code, playerType: 'sender', dare, selectedGame: selectedGame || 'rock-paper-scissors' });
     setPlayerType('sender');
     setView('waiting');
   };
 
+  const checkFileInfo = async (rc) => {
+    const res = await axios.get(BACKEND_URL + '/fileinfo/' + rc);
+    setReceiverFileInfo(res.data);
+    return res.data;
+  };
+
   const handleJoinAsReceiver = async (rc, rd) => {
+    setReceiverError('');
     try {
-      const res = await axios.get(`${BACKEND_URL}/fileinfo/${rc}`);
-      setFileInfo(res.data);
+      await checkFileInfo(rc);
+      setCode(rc);
+      setDare(rd);
       socket.emit('joinRoom', { code: rc, playerType: 'receiver', dare: rd });
       setPlayerType('receiver');
       setView('waiting');
     } catch (err) {
-      setError('The sender has not started the game yet. Please wait for the sender to join first.');
+      setReceiverError('No file found for code ' + rc + '. Check the code — the sender must upload and tap "Join Game" first.');
     }
   };
 
-  /* ------------------------------------------------------------------ */
-  /*  home: header + feature list + game picker                        */
-  /* ------------------------------------------------------------------ */
+  const handleAction = (act, value) => {
+    if (!socket || act === '' || act === undefined || act === null) return;
+    socket.emit('gameAction', { action: act, value: value !== undefined ? value : act });
+    setAction(String(act));
+  };
+
+  const downloadFile = async (fileCode, name, mimetype) => {
+    try {
+      const res = await axios.get(BACKEND_URL + '/download/' + fileCode, { responseType: 'blob' });
+      const blob = new Blob([res.data], { type: mimetype || 'application/octet-stream' });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = name || 'file';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      setError('Download failed. The file may have expired.');
+    }
+  };
+
+  const getDare = async (category, which) => {
+    if (!category) return;
+    try {
+      const res = await axios.get(BACKEND_URL + '/random-dare/' + category);
+      if (which === 'sender') setDare(res.data.dare);
+      else setReceiverDare(res.data.dare);
+    } catch (err) { /* leave input as-is */ }
+  };
+
+  const goHome = () => {
+    setView('home');
+    setFile(null); setFileInfo(null); setCode(''); setDare('');
+    setSelectedDareCategory(''); setReceiverDareCategory(''); setSelectedGame('');
+    setReceiverCode(''); setReceiverDare(''); setReceiverFileInfo(null); setReceiverError('');
+    setError(''); setPlayerType(''); setPlayerRole(null);
+    setCurrentGame(''); setGameResult(null); setGameWinner(null); setGameData(null);
+  };
+
+  /* ============================================================
+     VIEWS
+     ============================================================ */
   const HomeView = () => (
     <div className="home">
-      <div className="home-brand">
-        <h1>
-          Share<span className="highlight">N</span>Play
-        </h1>
-        <p>Secure file sharing with <b>12 real-time mini-games</b></p>
-      </div>
-      <p className="home-intro">
-        Send any file with a 6-digit code &amp; play a head-to-head mini-game
-        while you wait. The winner gets a dare. Works on every device — desktop,
-        phone, tablet — in light or dark mode.
-      </p>
-
-      <div className="hero-cta">
-        <button className="btn btn-primary btn-lg" onClick={() => setView('sender')}>
-          <span className="icon">📤</span> Send File
-        </button>
-        <button className="btn btn-secondary btn-lg" onClick={() => setView('receiver')}>
-          <span className="icon">📥</span> Receive File
-        </button>
-      </div>
-
+      <header className="hero">
+        <div className="eyebrow"><span className="dot" /> Realtime Multiplayer Platform</div>
+        <h1 className="logo">Share<span>N</span>Play</h1>
+        <p className="tagline">Secure file sharing with <b>12 real-time mini-games</b></p>
+        <p className="sub">Send any file with a 6-digit code & play a head-to-head mini-game while you wait. The winner gets a dare.</p>
+        <div className="hero-cta">
+          <button className="btn btn-primary btn-lg" onClick={() => setView('sender')}>
+            <span className="icon">📤</span> Send File
+          </button>
+          <button className="btn btn-secondary btn-lg" onClick={() => setView('receiver')}>
+            <span className="icon">📥</span> Receive File
+          </button>
+        </div>
+      </header>
       <div className="features-grid">
         {FEATURES.map((f, i) => (
-          <div key={i} className="feature">
+          <div key={i} className="feature-card">
             <div className="icon">{f.icon}</div>
             <div className="text">{f.text}</div>
           </div>
         ))}
       </div>
-
-      <div className="game-picker-wrap">
-        <div className="game-picker-label">🎮 What game will you play?</div>
-        <div className="game-picker">
-          {GAME_IDS.map(g => (
-            <button
-              key={g}
-              className={`game-pill ${selectedGame === g ? 'active' : ''}`}
-              onClick={() => setSelectedGame(selectedGame === g ? '' : g)}
-              type="button"
-            >
-              <span className="emoji">{GAME_EMOJI[g]}</span>
-              {GAME_NAMES[g]}
-            </button>
-          ))}
-        </div>
-      </div>
     </div>
   );
 
-  /* ------------------------------------------------------------------ */
-  /*  SENDER VIEW                                                       */
-  /* ------------------------------------------------------------------ */
   const SenderView = () => (
     <div className="sender">
       <div className="card">
         <div className="card-header">
           <h3>📤 Send File</h3>
-          <button
-            className="close-btn"
-            onClick={() => { setView('home'); setFile(null); setCode(''); setDare(''); }}
-          >
-            ✕
-          </button>
+          <button className="close-btn" onClick={goHome}>✕</button>
         </div>
         <div className="card-body">
           {!code ? (
             <div className="sender-form">
-              <div className="drop-zone" onClick={() => document.getElementById('fileInput').click()}>
+              <div className="drop-zone" onClick={() => document.getElementById('fileInput') && document.getElementById('fileInput').click()}>
                 <div className="icon-big">📁</div>
                 <h4>Drag & drop or click to browse</h4>
                 <p>Up to 200 MB · any file type</p>
@@ -306,77 +1188,55 @@ function App() {
                   id="fileInput"
                   type="file"
                   style={{ display: 'none' }}
-                  onChange={e => setFile(e.target.files[0])}
+                  onChange={e => setFile(e.target.files && e.target.files[0])}
                 />
               </div>
-
               {file && (
                 <div className="file-chip">
                   <span className="icon">📎</span>
                   <span className="name">{file.name}</span>
-                  <span className="size">{file.size < 1024 * 1024 ? (file.size / 1024).toFixed(1) + ' KB' : (file.size / (1024 * 1024)).toFixed(2) + ' MB'}</span>
+                  <span className="size">{fmtSize(file.size)}</span>
                 </div>
               )}
-
               {isUploading && (
                 <div className="progress-wrap">
                   <div className="progress-bar">
-                    <div
-                      className="progress-fill"
-                      style={{ width: uploadProgress + '%' }}
-                    />
+                    <div className="progress-fill" style={{ width: uploadProgress + '%' }} />
                   </div>
                   <p style={{ fontSize: '0.8rem', color: 'var(--ink-tertiary)' }}>
-                    {uploadProgress < 100 ? `Uploading… ${uploadProgress}%` : 'Processing…'}
+                    {uploadProgress < 100 ? 'Uploading… ' + uploadProgress + '%' : 'Processing…'}
                   </p>
                 </div>
               )}
-
-              <button
-                className="btn btn-primary btn-lg join-btn"
-                onClick={handleUpload}
-                disabled={!file}
-              >
+              <button className="btn btn-primary btn-lg join-btn" onClick={handleUpload} disabled={!file || isUploading}>
                 {isUploading ? '⏳ Uploading…' : '🚀 Generate Code'}
               </button>
-              {error && <p className="error-banner" style={{ color: 'var(--danger)', fontSize: '0.9rem', margin: 0 }}>⚠️ {error}</p>}
+              {error && <p className="error-banner">⚠️ {error}</p>}
             </div>
           ) : (
             <div className="sender-form">
-              <div className="file-info-card">
-                <div className="icon">✅</div>
-                <div className="name">{fileInfo.fileName}</div>
-                <div className="meta">
-                  {fileInfo.size ? `${(fileInfo.size / (1024 * 1024)).toFixed(2)} MB` : ''} · {fileInfo.mimetype}
+              {fileInfo && (
+                <div className="file-info-card">
+                  <div className="icon">✅</div>
+                  <div className="name">{fileInfo.fileName}</div>
+                  <div className="meta">{fmtSize(fileInfo.size || 0)} · {fileInfo.mimetype}</div>
                 </div>
-              </div>
-
+              )}
               <div className="code-display">{code}</div>
-              <p style={{ color: 'var(--ink-secondary)', fontSize: '0.9rem' }}>Share this code with the receiver</p>
-
+              <p style={{ color: 'var(--ink-secondary)', fontSize: '0.9rem', margin: 0 }}>Share this code — or the QR — with the receiver</p>
               <div className="qr-wrap">
-                <QRCodeSVG value={`${BACKEND_URL.split('://')[0]}://${window.location.hostname}:${FRONTEND_PORT}/?code=${code}&view=receiver`} size={200} />
+                <QRCodeSVG value={(lanHost ? 'http://' + lanHost : APP_URL) + '/?code=' + code + '&view=receiver'} size={190} />
               </div>
-
+              <p style={{ color: 'var(--ink-tertiary)', fontSize: '0.78rem', margin: 0, wordBreak: 'break-all', textAlign: 'center' }}>
+                {(lanHost ? 'http://' + lanHost : APP_URL) + '/?code=' + code + '&view=receiver'}
+              </p>
               <div className="dare-controls">
                 <div className="row">
-                  <select
-                    className="select"
-                    value={selectedDareCategory}
-                    onChange={e => setSelectedDareCategory(e.target.value)}
-                  >
+                  <select className="select" value={selectedDareCategory} onChange={e => setSelectedDareCategory(e.target.value)}>
                     <option value="">🎯 Dare category</option>
                     {dareCategories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                   </select>
-                  <button
-                    className="btn btn-success"
-                    onClick={async () => {
-                      if (!selectedDareCategory) return;
-                      const res = await axios.get(`${BACKEND_URL}/random-dare/${selectedDareCategory}`);
-                      setDare(res.data.dare);
-                    }}
-                    disabled={!selectedDareCategory}
-                  >
+                  <button className="btn btn-success" onClick={() => getDare(selectedDareCategory, 'sender')} disabled={!selectedDareCategory}>
                     🎲 Get Dare
                   </button>
                 </div>
@@ -388,11 +1248,7 @@ function App() {
                 />
                 <div className="game-picker-grid">
                   {GAME_IDS.map(g => (
-                    <div
-                      key={g}
-                      className={`game-pill-wrap ${selectedGame === g ? 'active' : ''}`}
-                      onClick={() => setSelectedGame(selectedGame === g ? '' : g)}
-                    >
+                    <div key={g} className={'game-pill-wrap ' + (selectedGame === g ? 'active' : '')} onClick={() => setSelectedGame(selectedGame === g ? '' : g)}>
                       <div className="emoji">{GAME_EMOJI[g]}</div>
                       <div className="name">{GAME_NAMES[g]}</div>
                       <div className="tag">{GAME_TAGS[g]}</div>
@@ -400,14 +1256,11 @@ function App() {
                   ))}
                 </div>
               </div>
-
-              <button
-                className="btn btn-primary btn-lg join-btn"
-                onClick={handleJoinAsSender}
-                disabled={!dare}
-              >
+              <button className="btn btn-primary btn-lg join-btn" onClick={handleJoinAsSender} disabled={!dare}>
                 🎮 Join Game
               </button>
+              {!dare && <p style={{ color: 'var(--ink-tertiary)', fontSize: '0.8rem', margin: 0 }}>Write or roll a dare to enable joining</p>}
+              {error && <p className="error-banner">⚠️ {error}</p>}
             </div>
           )}
         </div>
@@ -415,20 +1268,12 @@ function App() {
     </div>
   );
 
-  /* ------------------------------------------------------------------ */
-  /*  RECEIVER VIEW                                                     */
-  /* ------------------------------------------------------------------ */
   const ReceiverView = () => (
     <div className="receiver">
       <div className="card">
         <div className="card-header">
           <h3>📥 Receive File</h3>
-          <button
-            className="close-btn"
-            onClick={() => { setView('home'); setReceiverCode(''); setReceiverDare(''); setReceiverFileInfo(null); }}
-          >
-            ✕
-          </button>
+          <button className="close-btn" onClick={goHome}>✕</button>
         </div>
         <div className="card-body">
           <div className="receiver-form">
@@ -440,63 +1285,45 @@ function App() {
                 maxLength={6}
                 onChange={e => setReceiverCode(e.target.value.toUpperCase())}
               />
-              <button
-                className="copy-btn"
-                onClick={() => {
-                  if (receiverCode) {
-                    navigator.clipboard.writeText(receiverCode);
-                    alert('Code copied!');
-                  }
-                }}
-                style={{ display: receiverCode ? 'block' : 'none' }}
-              >
-                📋
-              </button>
+              {receiverCode && (
+                <button className="copy-btn" onClick={() => navigator.clipboard && navigator.clipboard.writeText(receiverCode)}>📋</button>
+              )}
             </div>
+
+            <button
+              className="btn btn-secondary"
+              style={{ width: '100%' }}
+              onClick={() => {
+                if (!/^[A-Z0-9]{6}$/.test(receiverCode)) { setReceiverError('Enter the full 6-digit code first.'); return; }
+                checkFileInfo(receiverCode).catch(() => setReceiverError('No file found for code ' + receiverCode + '. Check the code.'));
+              }}
+              disabled={!receiverCode}
+            >
+              🔍 Check File
+            </button>
 
             {receiverFileInfo && (
               <div className="file-info-card">
                 <div className="icon">📎</div>
                 <div className="name">{receiverFileInfo.fileName}</div>
-                <div className="meta">
-                  {receiverFileInfo.size ? `${(receiverFileInfo.size / (1024 * 1024)).toFixed(2)} MB` : ''} · {receiverFileInfo.mimetype}
-                </div>
+                <div className="meta">{fmtSize(receiverFileInfo.size || 0)} · {receiverFileInfo.mimetype}</div>
                 <button
                   className="btn btn-success btn-sm"
-                  style={{ marginTop: '10px' }}
-                  onClick={async () => {
-                    const res = await axios.get(`${BACKEND_URL}/download/${receiverCode}`, { responseType: 'blob' });
-                    const blob = new Blob([res.data], { type: receiverFileInfo.mimetype });
-                    const url = window.URL.createObjectURL(blob);
-                    const a = document.createElement('a');
-                    a.href = url; a.download = receiverFileInfo.fileName;
-                    a.click();
-                  }}
+                  style={{ marginTop: 10, width: '100%' }}
+                  onClick={() => downloadFile(receiverCode, receiverFileInfo.fileName, receiverFileInfo.mimetype)}
                 >
-                  💾 Download
+                  💾 Download now (anytime)
                 </button>
               </div>
             )}
 
             <div className="dare-controls">
               <div className="row">
-                <select
-                  className="select"
-                  value={receiverDareCategory}
-                  onChange={e => setSelectedDareCategory(e.target.value)}
-                >
+                <select className="select" value={receiverDareCategory} onChange={e => setReceiverDareCategory(e.target.value)}>
                   <option value="">🎯 Dare category</option>
                   {dareCategories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                 </select>
-                <button
-                  className="btn btn-success btn-sm"
-                  onClick={async () => {
-                    if (!receiverDareCategory) return;
-                    const res = await axios.get(`${BACKEND_URL}/random-dare/${receiverDareCategory}`);
-                    setReceiverDare(res.data.dare);
-                  }}
-                  disabled={!receiverDareCategory}
-                >
+                <button className="btn btn-success" onClick={() => getDare(receiverDareCategory, 'receiver')} disabled={!receiverDareCategory}>
                   🎲 Get Dare
                 </button>
               </div>
@@ -508,17 +1335,12 @@ function App() {
               />
               <button
                 className="btn btn-primary btn-lg join-btn"
-                onClick={async () => {
-                  if (!receiverCode || !receiverDare) return;
-                  setCode(receiverCode);
-                  setDare(receiverDare);
-                  await handleJoinAsReceiver(receiverCode, receiverDare);
-                }}
-                disabled={!receiverCode || !receiverDare}
+                onClick={() => handleJoinAsReceiver(receiverCode, receiverDare)}
+                disabled={!receiverCode || receiverCode.length !== 6 || !receiverDare}
               >
                 🎮 Join Game
               </button>
-              {receiverError && <p style={{ color: 'var(--danger)', fontSize: '0.9rem' }}>⚠️ {receiverError}</p>}
+              {receiverError && <p className="error-banner">⚠️ {receiverError}</p>}
             </div>
           </div>
         </div>
@@ -526,478 +1348,152 @@ function App() {
     </div>
   );
 
-  /* ------------------------------------------------------------------ */
-  /*  WAITING VIEW                                                      */
-  /* ------------------------------------------------------------------ */
   const WaitingView = () => (
     <div className="waiting">
       <div className="logo-big">🎮</div>
       <h2>Joining game…</h2>
       <div className="status-pill">
         <span className="dot" />
-        {connectionStatus === 'connected' ? 'Connected' :
-         connectionStatus === 'error' ? 'Connection Error' :
-         connectionStatus === 'disconnected' ? 'Disconnected' : 'Connecting…'}
+        {connectionStatus === 'connected' ? 'Connected' : connectionStatus === 'error' ? 'Connection Error' : connectionStatus === 'disconnected' ? 'Disconnected — reconnecting…' : 'Connecting…'}
       </div>
       <div><b>Role:</b> {playerType} · <b>Code:</b> {code}</div>
       <div><b>Your dare:</b> {dare}</div>
-      {waitingHint && <div style={{ color: 'var(--amber-600)', fontSize: '0.9rem' }}>{waitingHint}</div>}
-      <div style={{ color: 'var(--ink-tertiary)', fontSize: '0.85rem' }}>
-        Make sure both players joined with the same code.
-      </div>
-      {/Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) && (
-        <div style={{ color: 'var(--brand-600)', fontSize: '0.9rem' }}>
-          📱 Mobile detected — make sure the desktop user has joined too.
-        </div>
-      )}
+      {waitingHint && <div style={{ color: 'var(--amber-600, #d97706)', fontSize: '0.9rem' }}>{waitingHint}</div>}
+      {error && <p className="error-banner">⚠️ {error}</p>}
+      <button className="btn btn-secondary" style={{ marginTop: 14 }} onClick={goHome}>← Cancel</button>
     </div>
   );
 
-  /* ------------------------------------------------------------------ */
-  /*  GAME VIEW                                                         */
-  /* ------------------------------------------------------------------ */
+  const myScore = playerRole === 'player2' ? scores.player2 : scores.player1;
+  const oppScore = playerRole === 'player2' ? scores.player1 : scores.player2;
+
   const GameView = () => (
     <div className="game-view">
       <div className="scoreboard">
-        <div className={`score-side ${playerRole === 'player1' ? 'you' : ''}`}>
+        <div className={'score-side ' + (playerRole === 'player1' ? 'you' : '')}>
           <div className="label">You</div>
-          <div className="value">{playerRole === 'player2' ? scores.player2 : scores.player1}</div>
+          <div className="value">{myScore}</div>
         </div>
         <div className="score-center">
-          <div className="round-badge">Round {round} / 3</div>
+          <div className="round-badge">Round {round} / {maxRounds}</div>
           <div className="score-vs">VS</div>
         </div>
-        <div className={`score-side ${playerRole === 'player2' ? 'you' : ''}`}>
+        <div className={'score-side ' + (playerRole === 'player2' ? 'you' : '')}>
           <div className="label">Opponent</div>
-          <div className="value">{playerRole === 'player2' ? scores.player1 : scores.player2}</div>
+          <div className="value">{oppScore}</div>
         </div>
       </div>
 
-      <div style={{ maxWidth: '720px', margin: '0 auto' }}>
+      {playerType === 'receiver' && receiverFileInfo && (
+        <div className="file-info-card" style={{ maxWidth: 720, margin: '0 auto 14px', display: 'flex', alignItems: 'center', gap: 12 }}>
+          <div className="icon">📎</div>
+          <div style={{ flex: 1 }}>
+            <div className="name">{receiverFileInfo.fileName}</div>
+            <div className="meta">{fmtSize(receiverFileInfo.size || 0)}</div>
+          </div>
+          <button className="btn btn-success btn-sm" onClick={() => downloadFile(code, receiverFileInfo.fileName, receiverFileInfo.mimetype)}>
+            💾 Download
+          </button>
+        </div>
+      )}
+
+      <div style={{ maxWidth: 720, margin: '0 auto' }}>
         {gameResult && playerRole && (
-          <div className={`round-result ${gameResult.winner === playerRole ? 'win' : gameResult.winner === 'tie' ? 'tie' : 'lose'}`}>
-            {gameResult.winner === 'tie' ? '🤝 Tie!' :
-             gameResult.winner === playerRole ? '🏆 You win this round!' : '😞 Opponent wins this round.'}
+          <div className={'round-result ' + (gameResult.winner === playerRole ? 'win' : gameResult.winner === 'tie' ? 'tie' : 'lose')}>
+            {gameResult.winner === 'tie' ? '🤝 Tie!' : gameResult.winner === playerRole ? '🏆 You win this round!' : '😞 Opponent wins this round.'}
             <div style={{ fontSize: '0.85rem', color: 'var(--ink-secondary)', marginTop: 4 }}>
-              Scores: P1 {scores.player1} — P2 {scores.player2}
+              Scores: You {myScore} — {oppScore} Opponent
             </div>
           </div>
         )}
 
-        {/* 12-game render blocks ---------------------------------------------------- */}
         {currentGame === 'rock-paper-scissors' && (
-          <div className="game-card">
-            <div className="game-title-row"><span className="icon">✊</span><h3>Rock Paper Scissors</h3><span className="tag">Best of 3</span></div>
+          <GameShell emoji="✊" name="Rock Paper Scissors" tag="Best of 3">
             {gameResult && (
-              <div style={{ padding: '10px 14px', borderRadius: 10, background: 'var(--bg-surface-2)', marginBottom: 12 }}>
-                <p style={{ fontSize: '0.9rem' }}>
-                  You: {playerType === 'sender' ? gameResult.player1?.choice : gameResult.player2?.choice} · Opponent: {playerType === 'sender' ? gameResult.player2?.choice : gameResult.player1?.choice} · Winner: {gameResult.winner === 'tie' ? 'Tie' : (gameResult.winner === playerRole ? 'You' : 'Opponent')}
+              <div style={{ padding: 10, borderRadius: 10, background: 'var(--bg-surface-2, rgba(0,0,0,0.05))', marginBottom: 12, textAlign: 'center' }}>
+                <p style={{ fontSize: '0.9rem', margin: 0 }}>
+                  You: {gameResult[playerRole]?.choice ? RPS_EMOJI[gameResult[playerRole].choice] || gameResult[playerRole].choice : '—'} ·
+                  Opponent: {gameResult[playerRole === 'player1' ? 'player2' : 'player1']?.choice ? RPS_EMOJI[gameResult[playerRole === 'player1' ? 'player2' : 'player1'].choice] || '—' : '—'}
                 </p>
               </div>
             )}
-            <div className="game-controls" style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', justifyContent: 'center' }}>
-              {['rock','paper','scissors'].map(c => (
-                <button key={c} className="btn btn-primary" onClick={() => {
-                  if (action) return;
-                  socket.emit('gameAction', { action: c, value: c });
-                  setAction(c);
-                }} disabled={!!action}>
-                  {c === 'rock' ? '🪨' : c === 'paper' ? '📄' : '✂️'}
+            <div className="game-controls" style={{ display: 'flex', gap: 12, flexWrap: 'wrap', justifyContent: 'center' }}>
+              {['rock', 'paper', 'scissors'].map(c => (
+                <button key={c} className="btn btn-primary btn-lg" onClick={() => handleAction(c, c)} disabled={!!action}>
+                  {RPS_EMOJI[c]} {c}
                 </button>
               ))}
             </div>
-          </div>
+            {action && <WaitingForOpponent show />}
+          </GameShell>
         )}
 
-        {currentGame === 'tap-war' && (
-          <TapWarGame onResult={handleAction} round={round} socket={socket} code={code} />
-        )}
-
-        {currentGame === 'quick-quiz' && (
-          <div className="game-card">
-            <div className="game-title-row"><span className="icon">🧠</span><h3>Quick Quiz</h3><span className="tag">Round {round}</span></div>
-            {gameData && <div style={{ padding: '12px', borderRadius: 10, background: 'var(--bg-surface-2)' }}><p style={{ fontWeight: 700 }}>{gameData.question}</p></div>}
-            <div className="input-group" style={{ marginBottom: 12 }}>
-              <input className="input" placeholder="Type your answer…" value={action} onChange={e => setAction(e.target.value)} onKeyPress={e => e.key === 'Enter' && handleAction(action)} />
-              <button className="btn btn-primary" onClick={() => { if (action) handleAction(action); }} disabled={!action}>Submit</button>
-            </div>
-          </div>
-        )}
-
-        {currentGame === 'emoji-memory' && (
-          <EmojiMemoryGame sequence={gameData?.sequence || []} onResult={handleAction} />
-        )}
-
-        {currentGame === 'typing-speed' && (
-          <TypingSpeedGame text={gameData?.text || ''} onResult={handleAction} />
-        )}
-
-        {currentGame === 'reaction-time' && (
-          <ReactionTimeGame onResult={handleAction} round={round} />
-        )}
-
-        {currentGame === 'math-blitz' && (
-          <MathBlitzGame question={gameData?.question || ''} onResult={handleAction} round={round} />
-        )}
-
-        {currentGame === 'color-rush' && (
-          <ColorRushGame onResult={handleAction} round={round} />
-        )}
-
-        {currentGame === 'aim-master' && (
-          <AimMasterGame onResult={handleAction} round={round} />
-        )}
-
-        {currentGame === 'stickman-fight' && (
-          <div className="game-card">
-            <div className="game-title-row"><span className="icon">🧍</span><h3>Stickman Fight</h3><span className="tag">Round {round}</span></div>
-            <div className="stickman-wrap">
-              <div className="stickman-area">
-                <canvas className="stickman-canvas" width={160} height={260}></canvas>
-                <canvas className="stickman-canvas" width={160} height={260}></canvas>
-              </div>
-              <div className="stickman-btns">
-                <button className="btn-stickman" style={{
-                  background: 'linear-gradient(135deg,#3b82f6,#2563eb)', color: '#fff', border: 'none', padding: '12px 18px', borderRadius: 10, fontWeight: 800, cursor: 'pointer', fontSize: '0.95rem'
-                }}>🥊 Punch</button>
-                <button className="btn-stickman" style={{
-                  background: 'linear-gradient(135deg,#f43f5e,#e11d48)', color: '#fff', border: 'none', padding: '12px 18px', borderRadius: 10, fontWeight: 800, cursor: 'pointer', fontSize: '0.95rem'
-                }}>🦶 Kick</button>
-              </div>
-              <div className="stickman-results">
-                <div className="stat"><div className="num">{pW}</div><div className="lbl">Punches</div></div>
-                <div className="stat"><div className="num">{kW}</div><div className="lbl">Kicks</div></div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {currentGame === 'car-racer' && (
-          <div className="game-card">
-            <div className="game-title-row"><span className="icon">🏎</span><h3>Car Racer</h3><span className="tag">Round {round}</span></div>
-            <div className="car-wrapper">
-              <div className="car-canvas">
-                <canvas width={480} height={340}></canvas>
-                <div className="car-hud">
-                  <div className="hud-item speed"><div className="lbl">Speed</div><div className="val">{speed.toFixed(1)}</div></div>
-                  <div className="hud-item lives"><div className="lbl">Lives</div><div className="val">❤️ {lives}</div></div>
-                  <div className="hud-item score"><div className="lbl">Score</div><div className="val">{score}</div></div>
-                </div>
-              </div>
-              <div className="car-overlay hidden">
-                <p>🖱 Click / space to boost</p>
-              </div>
-            </div>
-            <div className="car-controls">
-              <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
-                <button className="btn btn-secondary" onClick={() => { /* steering */ }}>⬅ ➡</button>
-                <button className="btn btn-secondary" onClick={() => { /* boost */ }}>🚀 Boost</button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {currentGame === 'bike-racer' && (
-          <div className="game-card">
-            <div className="game-title-row"><span className="icon">🏍</span><h3>Bike Racer</h3><span className="tag">Round {round}</span></div>
-            <div className="bike-wrapper">
-              <div className="bike-canvas">
-                <canvas width={480} height={340}></canvas>
-                <div className="bike-hud">
-                  <div className="hud-item speed"><div className="lbl">Speed</div><div className="val">{speed.toFixed(1)}</div></div>
-                  <div className="hud-item lives"><div className="lbl">Lives</div><div className="val">❤️ {lives}</div></div>
-                  <div className="hud-item score"><div className="lbl">Score</div><div className="val">{score}</div></div>
-                </div>
-              </div>
-              <div className="bike-overlay hidden">
-                <p>⬅ ➡ lean · click boost</p>
-              </div>
-            </div>
-            <div className="bike-controls">
-              <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
-                <button className="btn btn-secondary" onClick={() => { /* lean */ }}>⬅ ➡</button>
-                <button className="btn btn-secondary" onClick={() => { /* boost */ }}>🚀 Boost</button>
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
-
-      {gameResult && playerRole && (
-        <div className={`game-result ${gameResult.winner === playerRole ? 'win' : gameResult.winner === 'tie' ? 'tie' : 'lose'}`}>
-          {gameResult.winner === 'tie' ? '🤝 Tie!' :
-           gameResult.winner === playerRole ? '🏆 You win this round!' : '😞 Opponent wins this round.'}
-        </div>
-      )}
-    </div>
-  );
-
-  /* ------------------------------------------------------------------ */
-  /*  END VIEW                                                          */
-  /* ------------------------------------------------------------------ */
-  const EndView = () => (
-    <div className="end-view">
-      <div className="logo-big">🎉</div>
-      <h2>{gameWinner.winner === 'tie' ? '🤝 It\'s a tie!' : gameWinner.winner === playerRole ? '🏆 You win!' : '😢 You lose'}</h2>
-      <p>Final scores: <b>P1 {gameWinner.finalScores?.player1?.score || 0}</b> — <b>P2 {gameWinner.finalScores?.player2?.score || 0}</b></p>
-      {(gameWinner.winner !== 'tie') && (
-        <div className="dare-banner end-banner">
-          🎁 <b>Dare:</b> {gameWinner.dares?.[playerRole === 'player1' ? 'player2' : 'player1'] || 'No dare available'}
-        </div>
-      )}
-      <div className="end-actions">
-        {playerType === 'receiver' && (
-          <button className="btn btn-success btn-lg" onClick={() => {}}>
-            💾 Download File
-          </button>
-        )}
-        <button className="btn btn-secondary btn-lg" onClick={() => window.location.reload()}>
-          🔄 Play again
-        </button>
+        {currentGame === 'tap-war' && <TapWarGame onResult={handleAction} round={round} />}
+        {currentGame === 'quick-quiz' && <QuickQuizGame onResult={handleAction} round={round} question={gameData && gameData.question} />}
+        {currentGame === 'emoji-memory' && <EmojiMemoryGame sequence={gameData && gameData.sequence} onResult={handleAction} round={round} />}
+        {currentGame === 'typing-speed' && <TypingSpeedGame text={gameData && gameData.text} onResult={handleAction} round={round} />}
+        {currentGame === 'reaction-time' && <ReactionTimeGame onResult={handleAction} round={round} />}
+        {currentGame === 'math-blitz' && <MathBlitzGame onResult={handleAction} round={round} />}
+        {currentGame === 'color-rush' && <ColorRushGame onResult={handleAction} round={round} />}
+        {currentGame === 'aim-master' && <AimMasterGame onResult={handleAction} round={round} />}
+        {currentGame === 'stickman-fight' && <StickmanFightGame onResult={handleAction} round={round} />}
+        {currentGame === 'car-racer' && <CarRacerGame onResult={handleAction} round={round} />}
+        {currentGame === 'bike-racer' && <BikeRacerGame onResult={handleAction} round={round} />}
       </div>
     </div>
   );
 
-  if (view === 'home') return <HomeView />;
-  if (view === 'sender') return <SenderView />;
-  if (view === 'receiver') return <ReceiverView />;
-  if (view === 'waiting') return <WaitingView />;
-  if (view === 'game') return <GameView />;
-  if (view === 'end') return <EndView />;
-  return null;
-}
-
-/* ============================================================
-   SUB-COMPONENTS (small games)
-   ============================================================ */
-function TapWarGame({ onResult, round, socket, code }) {
-  const [taps, setTaps] = useState(0);
-  const [timer, setTimer] = useState(5);
-  const [running, setRunning] = useState(false);
-  const [startTime, setStartTime] = useState(null);
-  useEffect(() => { setTaps(0); setTimer(5); setRunning(false); setStartTime(null); }, [round]);
-  useEffect(() => {
-    let raf;
-    function tick() {
-      if (!running || !startTime) return;
-      const left = Math.max(0, 5 - (Date.now() - startTime) / 1000);
-      setTimer(left);
-      if (left > 0) raf = requestAnimationFrame(tick);
-      else { setRunning(false); onResult(taps); }
-    }
-    if (running) raf = requestAnimationFrame(tick);
-    return () => raf && cancelAnimationFrame(raf);
-  }, [running, startTime, taps, onResult]);
-  function handleTap() {
-    if (!running) { setRunning(true); setTaps(1); setStartTime(Date.now()); setTimer(5); }
-    else setTaps(t => t + 1);
-  }
-  return (
-    <div className="game-card">
-      <div className="game-title-row"><span className="icon">👆</span><h3>Tap War</h3><span className="tag">Round {round}</span></div>
-      <div className="timer-bar" style={{ width: '100%', height: 12, borderRadius: 999, background: 'var(--bg-surface-2)', overflow: 'hidden' }}>
-        <div className="tap-progress" style={{ height: '100%', width: `${(5 - timer) / 5 * 100}%`, background: 'var(--brand-500)' }} />
+  const EndView = () => {
+    if (!gameWinner) return null;
+    const dareForLoser = gameWinner.dares && gameWinner.dares[gameWinner.winner];
+    return (
+      <div className="end-view">
+        <div className="logo-big">🎉</div>
+        <h2>
+          {gameWinner.winner === 'tie' ? '🤝 It\'s a tie!' : gameWinner.winner === playerRole ? '🏆 You win!' : '😢 You lose'}
+        </h2>
+        <p style={{ textAlign: 'center' }}>
+          Final scores — You: <b>{myScore}</b> · Opponent: <b>{oppScore}</b>
+        </p>
+        {gameWinner.winner !== 'tie' && (
+          <div className="dare-banner end-banner">
+            🎁 <b>Dare:</b> {dareForLoser || 'No dare was set'}
+            <div style={{ fontSize: '0.8rem', color: 'var(--ink-secondary)', marginTop: 4 }}>
+              ({gameWinner.winner === playerRole ? 'The loser performs your dare!' : 'You lost — this dare is yours to perform!'})
+            </div>
+          </div>
+        )}
+        {playerType === 'receiver' && receiverFileInfo && (
+          <div className="end-actions">
+            <button className="btn btn-success btn-lg" onClick={() => downloadFile(code, receiverFileInfo.fileName, receiverFileInfo.mimetype)}>
+              💾 Download File
+            </button>
+          </div>
+        )}
+        <div className="end-actions">
+          <button className="btn btn-secondary btn-lg" onClick={goHome}>🔄 Play again</button>
+        </div>
       </div>
-      <div style={{ fontSize: '1.2rem', fontWeight: 800, color: 'var(--ink-primary)' }}>Taps: {taps} · {timer.toFixed(1)}s</div>
-      <div className="game-controls">
-        <button className="btn btn-primary btn-lg" onClick={handleTap} disabled={timer === 0}>
-          {running ? 'TAP!' : 'START'}
-        </button>
-      </div>
-    </div>
-  );
-}
+    );
+  };
 
-function EmojiMemoryGame({ sequence, onResult }) {
-  const [input, setInput] = useState([]);
-  const [shown, setShown] = useState(true);
-  useEffect(() => { setInput([]); setShown(true); const t = setTimeout(() => setShown(false), 2200 + sequence.length * 500); return () => clearTimeout(t); }, [sequence]);
-  function handleEmojiClick(e) {
-    if (shown) return;
-    const v = e.target.textContent;
-    setInput(arr => { const n = [...arr, v]; if (n.length === sequence.length) { let c = 0; for (let i = 0; i < sequence.length; i++) if (sequence[i] === n[i]) c++; onResult(c); } return n; });
-  }
+  const screen =
+    view === 'home' ? <HomeView /> :
+    view === 'sender' ? <SenderView /> :
+    view === 'receiver' ? <ReceiverView /> :
+    view === 'waiting' ? <WaitingView /> :
+    view === 'game' ? <GameView /> :
+    view === 'end' ? <EndView /> : null;
+
   return (
-    <div className="game-card">
-      <div className="game-title-row"><span className="icon">🧩</span><h3>Emoji Memory</h3><span className="tag">Recall the sequence</span></div>
-      {shown ? (
-        <div style={{ fontSize: '1.6rem', textAlign: 'center', padding: '12px', fontWeight: 800 }}>{sequence.join(' ')}</div>
-      ) : (
-        <div>
-          <div style={{ textAlign: 'center', marginBottom: '8px' }}>Repeat the sequence:</div>
-          <div className="emoji-grid" style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', justifyContent: 'center' }}>
-            {['😀','😎','🎮','🚀','⭐','🎯','🎪','🎨','🐱','🐶','🌸','⚽'].map(e => (
-              <button key={e} className="btn-pill" style={{ fontSize: '1.2rem' }} onClick={handleEmojiClick}>{e}</button>
-            ))}
-          </div>
-          <div style={{ fontWeight: 700, color: 'var(--ink-secondary)', textAlign: 'center' }}>Your input: {input.join(' ')}</div>
-        </div>
+    <React.Fragment>
+      <div className="bg-stage" />
+      {intro && (
+        <IntroOverlay onDone={() => { sessionStorage.setItem('snp-intro-seen', '1'); setIntro(false); }} />
       )}
-    </div>
-  );
-}
-
-function TypingSpeedGame({ text, onResult }) {
-  const [input, setInput] = useState('');
-  const [started, setStarted] = useState(false);
-  const [done, setDone] = useState(false);
-  useEffect(() => { setInput(''); setStarted(false); setDone(false); }, [text]);
-  function handleChange(e) {
-    if (!started) { setStarted(true); }
-    setInput(e.target.value);
-    if (e.target.value === text) { setDone(true); const t = (Date.now() - (started ? 0 : 0)) / 1000; const wpm = Math.round((text.split(' ').length / (t || 1)) * 60); onResult(wpm); }
-  }
-  return (
-    <div className="game-card">
-      <div className="game-title-row"><span className="icon">⌨️</span><h3>Typing Speed</h3><span className="tag">Round {round}</span></div>
-      <div style={{ padding: '10px', borderRadius: 10, background: 'var(--bg-surface-2)', fontStyle: 'italic', color: 'var(--ink-secondary)', whiteSpace: 'pre-wrap' }}>{text}</div>
-      <textarea className="input" placeholder="Start typing…" value={input} onChange={handleChange} disabled={done} rows={4} style={{ fontFamily: 'var(--font-mono)', fontSize: '1rem' }} />
-      {done && <div style={{ color: 'var(--success)', fontWeight: 800, textAlign: 'center' }}>✅ Done! WPM sent.</div>}
-    </div>
-  );
-}
-
-function ReactionTimeGame({ onResult, round }) {
-  const [ready, setReady] = useState(false);
-  const [start, setStart] = useState(null);
-  const [done, setDone] = useState(false);
-  useEffect(() => { setReady(false); setStart(null); setDone(false); const t = setTimeout(() => { setReady(true); setStart(Date.now()); }, 1000 + Math.random() * 2000); return () => clearTimeout(t); }, [round]);
-  function handleClick() {
-    if (!ready || done) return;
-    setDone(true);
-    onResult(Date.now() - start);
-  }
-  return (
-    <div className="game-card">
-      <div className="game-title-row"><span className="icon">⚡</span><h3>Reaction Time</h3><span className="tag">Quickest wins</span></div>
-      <div className="reaction-area" style={{ height: 140, borderRadius: 12, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.8rem', fontWeight: 800, background: ready ? 'var(--success)' : 'var(--danger)' }}>
-        {ready ? 'CLICK!' : 'Wait for it...'}
-      </div>
-      <button className="btn btn-primary" onClick={handleClick} disabled={!ready || done}>{done ? 'Done!' : 'Click me!'}</button>
-    </div>
-  );
-}
-
-function MathBlitzGame({ question, onResult, round }) {
-  const [answer, setAnswer] = useState('');
-  const [locked, setLocked] = useState(false);
-  useEffect(() => { setAnswer(''); setLocked(false); }, [round, question]);
-  function submit() {
-    if (locked || answer === '') return;
-    setLocked(true);
-    onResult(JSON.stringify({ answer: Number(answer) }));
-  }
-  return (
-    <div className="game-card">
-      <div className="game-title-row"><span className="icon">🔢</span><h3>Math Blitz</h3><span className="tag">First correct wins</span></div>
-      <div className="math-question" style={{ fontWeight: 800, fontSize: '1.1rem' }}>{question} = ?</div>
-      {!locked ? (
-        <div className="math-input-row" style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', justifyContent: 'center' }}>
-          <input className="input" type="number" placeholder="?" value={answer} autoFocus onChange={e => setAnswer(e.target.value)} onKeyDown={e => e.key === 'Enter' && submit()} />
-          <button className="btn btn-primary btn-sm" onClick={submit} disabled={answer === ''}>Lock In 🔒</button>
-        </div>
-      ) : <div className="game-result" style={{ fontWeight: 800 }}>🔒 Answer locked! Waiting for opponent…</div>}
-    </div>
-  );
-}
-
-function ColorRushGame({ onResult, round }) {
-  const [running, setRunning] = useState(false);
-  const [done, setDone] = useState(false);
-  const [timeLeft, setTimeLeft] = useState(8);
-  const [word, setWord] = useState(null);
-  const [ink, setInk] = useState(null);
-  const [target, setTarget] = useState(null);
-  const [hits, setHits] = useState(0);
-  const [misses, setMisses] = useState(0);
-  const COLORS = [ { name: 'RED', hex: '#e74c3c' }, { name: 'GREEN', hex: '#27ae60' }, { name: 'BLUE', hex: '#2980b9' }, { name: 'YELLOW', hex: '#f1c40f' }, { name: 'PURPLE', hex: '#8e44ad' }, { name: 'ORANGE', hex: '#e67e22' } ];
-  const roundDur = 8;
-  useEffect(() => { setRunning(false); setDone(false); setTimeLeft(roundDur); setWord(null); setInk(null); setTarget(null); setHits(0); setMisses(0); }, [round]);
-  useEffect(() => {
-    if (!running) return;
-    const iv = setInterval(() => { setTimeLeft(t => { const n = +(t - 0.1).toFixed(1); if (n <= 0) { clearInterval(iv); setRunning(false); setDone(true); return 0; } return n; }); });
-    return () => clearInterval(iv);
-  }, [running]);
-  useEffect(() => { if (done) onResult(JSON.stringify({ hits, timeMs: roundDur * 1000 })); }, [done]);
-  function newWord() {
-    const w = COLORS[Math.floor(Math.random() * COLORS.length)];
-    let k = COLORS[Math.floor(Math.random() * COLORS.length)];
-    if (Math.random() < 0.6) while (k.name === w.name) k = COLORS[Math.floor(Math.random() * COLORS.length)];
-    setWord(w); setInk(k);
-    setTarget(Math.random() < 0.5 ? { type: 'word', name: w.name } : { type: 'ink', name: k.name });
-  }
-  function startGame() { newWord(); setRunning(true); }
-  function handlePick(colorName) {
-    if (!running || !target) return;
-    const isMatch = target.type === 'word' ? colorName === target.name : colorName === target.name;
-    if (isMatch) setHits(h => h + 1); else setMisses(m => m + 1);
-    newWord();
-  }
-  return (
-    <div className="game-card">
-      <div className="game-title-row"><span className="icon">🎨</span><h3>Color Rush</h3><span className="tag">Round {round}</span></div>
-      {!running && !done && (
-        <div style={{ textAlign: 'center', padding: '16px' }}>
-          <p style={{ fontSize: '0.9rem', color: 'var(--ink-secondary)' }}>A word appears in a different ink color. Click the <b>matching swatch</b> — for the word or its ink. <b>{roundDur}s</b>, go!</p>
-          <button className="btn btn-primary" onClick={startGame}>▶ Start Round</button>
-        </div>
-      )}
-      {running && (
-        <>
-          <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 800, color: 'var(--ink-tertiary)', marginBottom: 8 }}>
-            <span>⏱ {timeLeft.toFixed(1)}s</span>
-            <span>✅ {hits} · ❌ {misses}</span>
-          </div>
-          <div style={{ fontWeight: 800, fontSize: '2rem', marginBottom: 6 }}>{word ? word.name : ''}</div>
-          <div className="stroop-grid" style={{ display: 'flex', gap: '10px', justifyContent: 'center', flexWrap: 'wrap' }}>
-            {COLORS.map(c => <button key={c.name} className="stroop-swatch" style={{ background: c.hex, width: 60, height: 60, borderRadius: 10, fontWeight: 800, cursor: 'pointer' }} onClick={() => handlePick(c.name)}>{c.name}</button>)}
-          </div>
-        </>
-      )}
-      {done && <div className="game-result" style={{ fontWeight: 800 }}>🏁 Time! {hits} hits / {misses} misses — waiting for opponent…</div>}
-    </div>
-  );
-}
-
-function AimMasterGame({ onResult, round }) {
-  const [hits, setHits] = useState(0);
-  const [timeLeft, setTimeLeft] = useState(10);
-  const [running, setRunning] = useState(false);
-  const [done, setDone] = useState(false);
-  const [dot, setDot] = useState(null);
-  const roundDur = 10;
-  useEffect(() => { setHits(0); setTimeLeft(roundDur); setRunning(false); setDone(false); setDot(null); }, [round]);
-  useEffect(() => {
-    if (!running) return;
-    const iv = setInterval(() => { setTimeLeft(t => { const n = +(t - 0.1).toFixed(1); if (n <= 0) { clearInterval(iv); setRunning(false); setDone(true); return 0; } return n; }); });
-    return () => clearInterval(iv);
-  }, [running]);
-  useEffect(() => { if (done) onResult(JSON.stringify({ hits, timeMs: roundDur * 1000 })); }, [done]);
-  function spawnDot(h) { const size = Math.max(14, 46 - h * 2); setDot({ x: 8 + Math.random() * 84, y: 8 + Math.random() * 84, size }); }
-  function startGame() { setRunning(true); spawnDot(0); }
-  function handleHit() { if (!running) return; const h = hits + 1; setHits(h); spawnDot(h); }
-  return (
-    <div className="game-card">
-      <div className="game-title-row"><span className="icon">🎯</span><h3>Aim Master</h3><span className="tag">Round {round}</span></div>
-      {!running && !done && (
-        <div style={{ textAlign: 'center', padding: '16px' }}>
-          <p style={{ fontSize: '0.9rem', color: 'var(--ink-secondary)' }}>Click the targets before time runs out. They get <b>smaller</b> as you score.</p>
-          <button className="btn btn-primary" onClick={startGame}>▶ Start Round</button>
-        </div>
-      )}
-      {running && (
-        <>
-          <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 800, color: 'var(--ink-tertiary)', marginBottom: 8 }}>
-            <span>⏱ {timeLeft.toFixed(1)}s</span>
-            <span>🎯 {hits}</span>
-          </div>
-          <div className="aim-area" style={{ height: 260, borderRadius: 12, background: 'var(--bg-surface-2)', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
-            {dot && <button className="aim-dot" style={{ position: 'absolute', left: `${dot.x}%`, top: `${dot.y}%`, width: dot.size, height: dot.size, borderRadius: '50%', background: '#3b82f6', cursor: 'pointer' }} onClick={handleHit} />}
-          </div>
-        </>
-      )}
-      {done && <div className="game-result" style={{ fontWeight: 800 }}>🏁 Time! You hit {hits} targets — waiting for opponent…</div>}
-    </div>
+      {screen}
+      <BrandFooter />
+    </React.Fragment>
   );
 }
 
