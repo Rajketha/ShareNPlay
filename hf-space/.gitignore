@@ -100,6 +100,3 @@ Thumbs.db
 
 # Socket.IO debug logs
 *.log 
-# Hugging Face push metadata (created by hf-space/push-to-hf.sh)
-hf-space/.hf-git/
-backend/uploads/
