@@ -8,6 +8,10 @@ mini-game before (or while) the download lands. The loser performs the winner's 
 
 *a RAJKETHA PROJECT*
 
+## Live demo
+
+**https://rajketha-sharenplay.hf.space** — hosted on Hugging Face Spaces (Docker).
+
 ## How it works
 
 1. **Sender** uploads a file (up to 10 MB), picks a game and a dare.
